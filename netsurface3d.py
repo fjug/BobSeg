@@ -1,6 +1,7 @@
 import numpy as np
 import bresenham as bham
 import maxflow
+import math
 
 from spimagine import EllipsoidMesh, Mesh
 
@@ -51,7 +52,7 @@ class NetSurf3d:
         assert( len(min_radii) == 3 )
     
         self.image = image
-        self.center = center
+        self.center = np.array(center)
         self.min_radii = min_radii
         self.max_radii = max_radii
         
@@ -170,30 +171,65 @@ class NetSurf3d:
         cnorm = 2. * np.array(cabs[::-1], float) / np.array(pixelsizes)
         return tuple(cnorm[::-1])
 
+    def create_center_mesh( self, facecolor=(1.,.3,.2), radii=min_radii ):
+        
+         if radii is None: radii = (3,3,.5)
+         return EllipsoidMesh(rs=self.norm_radii(radii,self.image.shape), 
+                              pos=self.norm_coords(self.center, self.image.shape), 
+                              facecolor=facecolor, 
+                              alpha=.5)
     
     def create_surface_mesh( self, facecolor=(1.,.3,.2) ):
         myverts = np.zeros((self.num_columns, 3))
         mynormals = self.col_vectors
-        # myinds = np.zeros(self.num_columns*3*6) # NEEDS IMPROVEMENT!!! 6 is just because I know it!
         
         for i in range(self.num_columns):
-            for k in range(self.K):
-                if self.g.get_segment(i*self.K+k) == 1: break # leave as soon as k is first outside point
-            x = int(self.center[0] + self.col_vectors[i,0] * 
-                    self.min_radii[0] + self.col_vectors[i,0] * 
-                    (k-1)/float(self.K) * (self.max_radii[0]-self.min_radii[0]) )
-            y = int(self.center[1] + self.col_vectors[i,1] * 
-                    self.min_radii[1] + self.col_vectors[i,1] * 
-                    (k-1)/float(self.K) * (self.max_radii[1]-self.min_radii[1]) )
-            z = int(self.center[2] + self.col_vectors[i,2] * 
-                    self.min_radii[2] + self.col_vectors[i,2] * 
-                    (k-1)/float(self.K) * (self.max_radii[2]-self.min_radii[2]))
-            
-            myverts[i,:] = self.norm_coords([x,y,z],self.image.shape)
-            # hood = self.neighbors_of[i]
-            # for j in range(len(hood)):
-            #     myinds[3*6*i + 3*j + 0]   = i
-            #     myinds[3*6*i + 3*j + 1] = self.neighbors_of[i][j]
-            #     myinds[3*6*i + 3*j + 2] = self.neighbors_of[i][(j+1)%len(hood)]
+            p = self.get_surface_point(i)
+            myverts[i,:] = self.norm_coords( p, self.image.shape )
                 
         return Mesh(vertices=myverts, normals = mynormals, indices = self.triangles.flatten(), facecolor=facecolor, alpha=.5)
+    
+    def get_volume( self, calibration = (1.,1.,1.) ):
+        """
+        calibration: 3-tupel of pixel size multipliers
+        """
+        volume = 0.
+        for a,b,c in self.triangles:
+            pa = self.get_surface_point( a )
+            pb = self.get_surface_point( b )
+            pc = self.get_surface_point( c )    
+            volume += self.get_triangle_splinter_volume( pa, pb, pc, calibration )
+
+        return volume   
+         
+            
+    def get_surface_point( self, column_id ):
+        for k in range(self.K):
+            if self.g.get_segment(column_id*self.K+k) == 1: break # leave as soon as k is first outside point
+        k-=1
+        x = int(self.center[0] + self.col_vectors[column_id,0] * 
+                self.min_radii[0] + self.col_vectors[column_id,0] * 
+                (k-1)/float(self.K) * (self.max_radii[0]-self.min_radii[0]) )
+        y = int(self.center[1] + self.col_vectors[column_id,1] * 
+                self.min_radii[1] + self.col_vectors[column_id,1] * 
+                (k-1)/float(self.K) * (self.max_radii[1]-self.min_radii[1]) )
+        z = int(self.center[2] + self.col_vectors[column_id,2] * 
+                self.min_radii[2] + self.col_vectors[column_id,2] * 
+                (k-1)/float(self.K) * (self.max_radii[2]-self.min_radii[2]))
+        return (x,y,z)
+    
+    def get_triangle_splinter_volume( self, pa, pb, pc, calibration ):
+        """
+        Computes the volume of the pyramid defined by points pa, pb, pc, and self.center
+        """
+        assert not self.center is None
+        
+        x = (np.array(pa)-self.center) * calibration[0]
+        y = (np.array(pb)-self.center) * calibration[1]
+        z = (np.array(pc)-self.center) * calibration[2]
+        return math.fabs( x[0] * y[1] * z[2] + 
+                          x[1] * y[2] * z[0] + 
+                          x[2] * y[0] * z[1] - 
+                          x[0] * y[2] * z[1] - 
+                          x[1] * y[0] * z[2] - 
+                          x[2] * y[1] * z[0]) / 6.
