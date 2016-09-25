@@ -25,10 +25,19 @@ class NetSurf3d:
     g = None
     maxval = None
     
-    def __init__( self, columns, adjacency, K=30, max_delta_k=4 ):
+    def __init__( self, columns, triangles, adjacency, K=30, max_delta_k=4 ):
+        """
+        Parameters:
+            columns     -  unit vectors defining the direction of net columns
+            triangles   -  list of column id triplets defining the faces of the 3d object definied by columns
+            adjancency  -  neighborhood of columns to be used in net surface
+            K           -  how many sample points per column
+            max_delta_k -  maximum column height change between neighbors (as defined by adjacency)
+        """
         assert (columns.shape[1] == 3)
         
         self.col_vectors = columns
+        self.triangles = triangles
         self.neighbors_of = adjacency
         self.K = K
         self.max_delta_k = max_delta_k
@@ -165,7 +174,7 @@ class NetSurf3d:
     def create_surface_mesh( self, facecolor=(1.,.3,.2) ):
         myverts = np.zeros((self.num_columns, 3))
         mynormals = self.col_vectors
-        myinds = np.zeros(self.num_columns*3*6) # NEEDS IMPROVEMENT!!! 6 is just because I know it!
+        # myinds = np.zeros(self.num_columns*3*6) # NEEDS IMPROVEMENT!!! 6 is just because I know it!
         
         for i in range(self.num_columns):
             for k in range(self.K):
@@ -181,10 +190,10 @@ class NetSurf3d:
                     (k-1)/float(self.K) * (self.max_radii[2]-self.min_radii[2]))
             
             myverts[i,:] = self.norm_coords([x,y,z],self.image.shape)
-            hood = self.neighbors_of[i]
-            for j in range(len(hood)):
-                myinds[3*6*i + 3*j + 0]   = i
-                myinds[3*6*i + 3*j + 1] = self.neighbors_of[i][j]
-                myinds[3*6*i + 3*j + 2] = self.neighbors_of[i][(j+1)%len(hood)]
+            # hood = self.neighbors_of[i]
+            # for j in range(len(hood)):
+            #     myinds[3*6*i + 3*j + 0]   = i
+            #     myinds[3*6*i + 3*j + 1] = self.neighbors_of[i][j]
+            #     myinds[3*6*i + 3*j + 2] = self.neighbors_of[i][(j+1)%len(hood)]
                 
-        return Mesh(vertices=myverts, normals = mynormals, indices = myinds, facecolor=facecolor, alpha=.5)
+        return Mesh(vertices=myverts, normals = mynormals, indices = self.triangles.flatten(), facecolor=facecolor, alpha=.5)
