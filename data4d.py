@@ -27,6 +27,7 @@ class Data4d:
     object_max_surf_dist = {}
 
     netsurfs = {}
+    spimagine = None
     current_fame = None
     
     # global segmentation parameters (for NetSurf3d)
@@ -195,7 +196,11 @@ class Data4d:
         assert f>=0 and f<len(self.images)
         
         self.current_frame = f
-        self.spimagine = volshow(self.images[f], stackUnits = stackUnits, raise_window=raise_window)
+        if self.spimagine is None:
+            self.spimagine = volshow(self.images[f], stackUnits = stackUnits, raise_window=raise_window, autoscale=False)
+        else:
+            self.spimagine.glWidget.renderer.update_data(self.images[f])
+            self.spimagine.glWidget.refresh()
         
         # remove all meshes (might eg exist from last call)
         self.hide_all_objects()
