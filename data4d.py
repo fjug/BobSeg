@@ -50,6 +50,7 @@ class Data4d:
         """
         Parameters:
             filenames   -  list of filenames (one per time point)
+            pixelsize   -  calibration, eg. for volume computation
             silent      -  if True, no (debug/info) outputs will be printed on stdout
         """
         self.silent = silent
@@ -75,7 +76,10 @@ class Data4d:
         Adds an (empty) object definition to this dataset.
         Returns the id of the added object.
         """
-        oid = len(self.object_names)
+        oid = self.get_object_id( name )
+        if oid == -1: # not found
+            oid = len(self.object_names)
+            self.object_names.append(name)
         self.object_names.append(name)
         self.object_visibility[oid] = [False] * len(self.images)
         self.object_seedpoints[oid] = [None] * len(self.images)
@@ -89,6 +93,7 @@ class Data4d:
         for i,n in enumerate(self.object_names):
             if name == n:
                 return i
+        return -1
         
     def add_object_at ( self, oid, min_rs, max_rs, frame, seed, frame_to=None, seed_to=None, segment_it=False ):
         """

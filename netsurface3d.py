@@ -11,7 +11,7 @@ class NetSurf3d:
     Relevant publication: [Wu & Chen 2002]
     """
     
-    INF = 99999999
+    INF = 9999999999
     
     image = None
     center = None
@@ -107,12 +107,12 @@ class NetSurf3d:
                 None
         return m
 
-    def build_flow_network( self, alpha=0.0 ):
+    def build_flow_network( self, alpha=None ):
         '''
         Builds the flow network that can solve the V-Weight Net Surface Problem
         Returns a tuple (g, nodes) consisting of the flow network g, and its nodes.
         
-        If alpha != 0.0 this method will add an additional weighted flow edge (horizontal binary costs).
+        If alpha != None this method will add an additional weighted flow edge (horizontal binary costs).
         '''
         self.num_nodes = self.num_columns*self.K
         # estimated num edges (in case I'd have equal num enighbors and full pencils)
