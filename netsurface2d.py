@@ -183,6 +183,19 @@ class NetSurf2d:
                 (k-1)/float(self.K) * (self.max_radius[1]-self.min_radius[1]) )
         return (x,y)
     
+    def get_inside_points( self, column_id ):
+        points = []
+        for k in range(self.K):
+            if self.g.get_segment(column_id*self.K+k) == 1: break # leave as soon as k is first outside point
+            x = int(self.center[0] + self.col_vectors[column_id,0] * 
+                    self.min_radius[0] + self.col_vectors[column_id,0] * 
+                    (k-1)/float(self.K) * (self.max_radius[0]-self.min_radius[0]) )
+            y = int(self.center[1] + self.col_vectors[column_id,1] * 
+                    self.min_radius[1] + self.col_vectors[column_id,1] * 
+                    (k-1)/float(self.K) * (self.max_radius[1]-self.min_radius[1]) )
+            points.append((x,y))
+        return points
+    
     def get_triangle_area( self, pa, pb, pc, calibration ):
         # calculate the length of all sides
         a = ( (pa[0]-pc[0])**2 + (pa[1]-pc[1])**2 ) ** 0.5

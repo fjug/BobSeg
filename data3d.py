@@ -11,6 +11,7 @@ import matplotlib as plt
 from matplotlib.patches import Polygon
 from matplotlib.patches import Ellipse
 from matplotlib.collections import PatchCollection
+from matplotlib.path import Path
 
 class Data3d:
     """
@@ -292,4 +293,30 @@ class Data3d:
         netsurf = self.netsurfs[oid][frame]
         for i in range( len(col_vectors) ):
             points.append( netsurf.get_surface_point(i) )
+        return points
+    
+    def get_radialdots_in( self, frame, oid, border_in=0, border_out=0, stepwidth=1 ):
+        points=[]
+        col_vectors = self.netsurfs[oid][frame].col_vectors
+        netsurf = self.netsurfs[oid][frame]
+        for i in range( len(col_vectors) ):
+            pts = netsurf.get_inside_points(i)
+            points.extend( pts[border_in:len(pts)-border_out:stepwidth] )
+        return points
+    
+    def get_griddots_in( self, frame, oid, spacing=5 ):
+        points=[]
+        
+        polypoints = np.array(self.get_result_polygone(frame,oid))
+        poly = Path( polypoints )
+        
+        minx = np.min(polypoints[0])
+        maxx = np.max(polypoints[0])
+        miny = np.min(polypoints[1])
+        maxy = np.max(polypoints[1])
+        for x in range(minx,maxx,spacing):
+            for y in range(miny,maxy,spacing):
+                if True or poly.contains_point((x,y)):
+                    points.append((x,y))
+                    
         return points
