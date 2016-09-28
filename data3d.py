@@ -285,3 +285,11 @@ class Data3d:
             patches.append(polygon)
             p = PatchCollection(patches, cmap=plt.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
+
+    def get_result_polygone( self, frame, oid ):
+        points=[]
+        col_vectors = self.netsurfs[oid][frame].col_vectors
+        netsurf = self.netsurfs[oid][frame]
+        for i in range( len(col_vectors) ):
+            points.append( netsurf.get_surface_point(i) )
+        return points
