@@ -164,9 +164,9 @@ class NetSurf2d:
         calibration: 3-tupel of pixel size multipliers
         """
         area = 0.
-        for i in range(len(self.num_columns)):
+        for i in range(self.num_columns):
             pa = self.get_surface_point( i )
-            pb = self.get_surface_point( (i+1)%len(self.num_columns) )
+            pb = self.get_surface_point( (i+1)%self.num_columns )
             area += self.get_triangle_area( pa, pb, self.center, calibration )
         return area
          

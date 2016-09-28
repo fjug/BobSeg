@@ -53,8 +53,8 @@ p7
 (dp8
 I0
 (lp9
-(I30
-I30
+(I5
+I5
 tp10
 ag10
 ag10
@@ -109,7 +109,7 @@ p16
 I00
 sS'max_delta_k'
 p17
-I6
+I8
 sS'K'
 I100
 sS'object_seedpoints'
@@ -153,7 +153,7 @@ tRp27
 (I2
 tg25
 I00
-S'z\x00\x00\x00\x00\x00\x00\x00a\x00\x00\x00\x00\x00\x00\x00'
+S'~\x00\x00\x00\x00\x00\x00\x00f\x00\x00\x00\x00\x00\x00\x00'
 tbassS'object_visibility'
 p28
 (dp29

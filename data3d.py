@@ -22,7 +22,6 @@ class Data3d:
     images = []
     pixelsize=(1.,1.,1.)
     object_names = []
-    object_visibility = {}
     object_seedpoints = {}
     object_areas = {}
     object_min_surf_dist = {}
@@ -76,7 +75,6 @@ class Data3d:
         if oid == -1: # not found
             oid = len(self.object_names)
             self.object_names.append(name)
-        self.object_visibility[oid] = [False] * len(self.images)
         self.object_seedpoints[oid] = [None] * len(self.images)
         self.object_min_surf_dist[oid] = [(0,0)] * len(self.images)
         self.object_max_surf_dist[oid] = [(100,100)] * len(self.images)
@@ -118,7 +116,6 @@ class Data3d:
         for i in range(frame,frame_to+1):
             self.object_min_surf_dist[oid][i] = min_rs
             self.object_max_surf_dist[oid][i] = max_rs        
-            self.object_visibility[oid][i] = True
             self.object_seedpoints[oid][i] = self.interpolate_points(np.array(seed), 
                                                                      np.array(seed_to), 
                                                                      float(i-frame)/(1+frame_to-frame))
@@ -131,27 +128,6 @@ class Data3d:
     def interpolate_points( self, start, end, fraction ):
         return np.round( start + (end-start)*fraction )
     
-    def segment( self, oids=None ):
-        """
-        Segments all added object occurances using NetSurf2d.
-        If oids is not given (None) this will be done for ALL objects at ALL time points.
-        """
-        if oids is None:
-            oids = range(len(self.object_names)) # all ever added
-        for i,oid in enumerate(oids):
-            if not self.silent:
-                print 'Working on "'+str(self.object_names[oid])+ \
-                      '" (object', i+1, 'of', len(oids),')...'
-            self.netsurfs[oid] = [None] * len(self.images)
-            for f, visible in enumerate(self.object_visibility[oid]):
-                if visible:
-                    if not self.silent:
-                        print '   Segmenting in frame '+str(f)+'...' 
-                    self.segment_frame( oid, f )
-                    self.object_areas[oid][f] = self.netsurfs[oid][f].get_area( self.pixelsize )
-                    if not self.silent:
-                        print '      Volume: ', self.object_volumes[oid][f]
-
     def segment_frame( self, oid, f ):
         """
         Segments object oid in frame f.
@@ -171,10 +147,12 @@ class Data3d:
                                                  self.object_seedpoints[oid][f], 
                                                  self.object_max_surf_dist[oid][f], 
                                                  min_radius=self.object_min_surf_dist[oid][f])
+        self.object_areas[oid][f] = self.netsurfs[oid][f].get_area( self.pixelsize )
         if not self.silent:
             print '      Optimum energy: ', optimum
             ins, outs = self.netsurfs[oid][f].get_counts()
             print '      Nodes in/out: ', ins, outs
+            print '      Area: ', self.object_areas[oid][f]
             
     # ***************************************************************************************************
     # *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT ***
@@ -238,7 +216,6 @@ class Data3d:
         dictDataStorage = {
             'silent'               : self.silent,
             'object_names'         : self.object_names,
-            'object_visibility'    : self.object_visibility,
             'object_seedpoints'    : self.object_seedpoints,
             'object_areas'         : self.object_areas,
             'object_min_surf_dist' : self.object_min_surf_dist,
@@ -255,7 +232,6 @@ class Data3d:
 
         self.silent = dictDataStorage['silent']
         self.object_names = dictDataStorage['object_names']
-        self.object_visibility = dictDataStorage['object_visibility']
         self.object_seedpoints = dictDataStorage['object_seedpoints']
         self.object_areas = dictDataStorage['object_areas']
         self.object_min_surf_dist = dictDataStorage['object_min_surf_dist']
