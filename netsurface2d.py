@@ -67,7 +67,7 @@ class NetSurf2d:
         self.maxval = self.g.maxflow()
         return self.maxval
     
-    def compute_weights(self, inverse_order=False):
+    def compute_weights(self):
         '''
         Computes all weights of G and of G_tilde and returns them as a tuple (w, w_tilde).
         '''
@@ -89,9 +89,6 @@ class NetSurf2d:
                 start = int(k * float(num_pixels)/self.K)
                 end = max( start+1, start + num_pixels/self.K )
                 self.w[i,k] = -1 * self.compute_weight_at(coords[start:end])
-
-        if inverse_order:
-            self.w = self.w[:,::-1]
 
         for i in range(self.num_columns):
             self.w_tilde[i,0] = self.w[i,0] 
@@ -118,7 +115,7 @@ class NetSurf2d:
         If alpha != None this method will add an additional weighted flow edge (horizontal binary costs).
         '''
         self.num_nodes = self.num_columns*self.K
-        # estimated num edges (in case I'd have equal num enighbors and full pencils)
+        # the next line estimates bullshit!
         self.num_edges = ( self.num_nodes * 2 * 
                            (self.max_delta_k + self.max_delta_k+1) ) * .5
 

@@ -6,6 +6,7 @@ from tifffile import imread, imsave
 import cPickle as pickle
 
 from netsurface2d import NetSurf2d
+from netsurface2dt import NetSurf2dt
 
 import matplotlib as plt
 from matplotlib.patches import Polygon
@@ -29,6 +30,7 @@ class Data3d:
     object_max_surf_dist = {}
 
     netsurfs = {}
+    netsurf2dt = {} # instances of NetSurf2dt
     
     # global segmentation parameters (for NetSurf2d)
     # (set from outside using method 'set_seg_params')
@@ -81,6 +83,7 @@ class Data3d:
         self.object_max_surf_dist[oid] = [(100,100)] * len(self.images)
         self.object_areas[oid] = [0] * len(self.images)
         self.netsurfs[oid] = [None] * len(self.images)
+        self.netsurf2dt[oid] = None
         return oid
     
     def get_object_id( self, name ):
@@ -141,6 +144,7 @@ class Data3d:
         try:
             self.netsurfs[oid][f] = None
         except:
+            print 'LAZY INIT NETSURFS'
             self.netsurfs[oid] = [None] * len(self.images)
         
         self.netsurfs[oid][f] = NetSurf2d(self.num_columns, K=self.K, max_delta_k=self.max_delta_k)
@@ -154,6 +158,27 @@ class Data3d:
             ins, outs = self.netsurfs[oid][f].get_counts()
             print '      Nodes in/out: ', ins, outs
             print '      Area: ', self.object_areas[oid][f]
+            
+    def segment2dt( self, oid, max_radial_delta=2 ):
+        '''
+        Segments entire time series using NetSurf2dt (increases temporal consistency)
+        Note: changes self.object_areas!
+        '''
+        self.netsurf2dt[oid] = NetSurf2dt(self.num_columns, 
+                                          K=self.K, 
+                                          max_delta_k_xy=self.max_delta_k, 
+                                          max_delta_k_t=max_radial_delta)
+        optimum = self.netsurf2dt[oid].apply_to(self.images, 
+                                           self.object_seedpoints[oid], 
+                                           self.object_max_surf_dist[oid][0], # note: frame 0 currently rules them all
+                                           min_radius=self.object_min_surf_dist[oid][0])
+        for t in range(len(self.images)):
+            self.object_areas[oid][t] = self.netsurf2dt[oid].get_area( t, self.pixelsize )
+            if not self.silent:
+                print 'Results for frame %d:'%(t)
+                print '      Optimum energy: ', optimum
+                print '      Area: ', self.object_areas[oid][t]
+        
             
     # ***************************************************************************************************
     # *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT ***
@@ -170,7 +195,7 @@ class Data3d:
         if frames is None:
             frames = range(len(self.images)) 
 
-        better_centers = [None] * len(self.images)
+        better_centers = self.object_seedpoints[oid]
         for f in frames:
             if not self.object_seedpoints[oid][f] is None:
                 assert not self.netsurfs[oid][f] is None # segmentation must have been performed
@@ -252,8 +277,6 @@ class Data3d:
             patches = [] # collects patches to be plotted
 
             center = self.netsurfs[oid][frame].center
-            #min_radius = self.netsurfs[oid][frame].min_radius
-            #max_radius = self.netsurfs[oid][frame].max_radius
             min_radius = self.object_min_surf_dist[oid][frame]
             max_radius = self.object_max_surf_dist[oid][frame]
             
@@ -287,12 +310,40 @@ class Data3d:
             p = PatchCollection(patches, cmap=plt.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
 
+    def plot_2dt_result( self, frame, ax ):
+        ax.imshow(self.images[frame])
+        
+        for oid in range(len(self.object_names)):
+            patches = [] # collects patches to be plotted
+            surface=[] # will collect the highest v per column in here
+            
+            col_vectors = self.netsurf2dt[oid].col_vectors
+            center = self.netsurf2dt[oid].centers[frame]
+            min_radius = self.netsurf2dt[oid].min_radius
+            max_radius = self.netsurf2dt[oid].max_radius
+            netsurf2dt = self.netsurf2dt[oid]
+            for i in range( len(col_vectors) ):
+                surface.append((0,0))
+                surface[i] = netsurf2dt.get_surface_point(frame,i)
+            polygon = Polygon(surface, True)
+            patches.append(polygon)
+            p = PatchCollection(patches, cmap=plt.cm.jet, alpha=0.4, color='green')
+            ax.add_collection(p)
+
     def get_result_polygone( self, frame, oid ):
         points=[]
         col_vectors = self.netsurfs[oid][frame].col_vectors
         netsurf = self.netsurfs[oid][frame]
         for i in range( len(col_vectors) ):
             points.append( netsurf.get_surface_point(i) )
+        return points
+    
+    def get_result_polygone_2dt( self, frame, oid ):
+        points=[]
+        col_vectors = self.netsurf2dt[oid].col_vectors
+        netsurf2dt = self.netsurf2dt[oid]
+        for i in range( len(col_vectors) ):
+            points.append( netsurf2dt.get_surface_point(frame,i) )
         return points
     
     def get_radialdots_in( self, frame, oid, border_in=0, border_out=0, stepwidth=1 ):
