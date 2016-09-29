@@ -80,7 +80,6 @@ class Data4d:
         if oid == -1: # not found
             oid = len(self.object_names)
             self.object_names.append(name)
-        self.object_names.append(name)
         self.object_visibility[oid] = [False] * len(self.images)
         self.object_seedpoints[oid] = [None] * len(self.images)
         self.object_min_surf_dist[oid] = [(0,0,0)] * len(self.images)
