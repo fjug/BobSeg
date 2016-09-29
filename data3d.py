@@ -307,16 +307,16 @@ class Data3d:
     def get_griddots_in( self, frame, oid, spacing=5 ):
         points=[]
         
-        polypoints = np.array(self.get_result_polygone(frame,oid))
-        poly = Path( polypoints )
+        polypoints = np.array( self.get_result_polygone(frame,oid) )
+        poly = Path( polypoints, closed=True )
         
-        minx = np.min(polypoints[0])
-        maxx = np.max(polypoints[0])
-        miny = np.min(polypoints[1])
-        maxy = np.max(polypoints[1])
+        minx = np.min(polypoints[:,0])
+        maxx = np.max(polypoints[:,0])
+        miny = np.min(polypoints[:,1])
+        maxy = np.max(polypoints[:,1])
         for x in range(minx,maxx,spacing):
             for y in range(miny,maxy,spacing):
-                if True or poly.contains_point((x,y)):
+                if poly.contains_point((x,y)):
                     points.append((x,y))
                     
         return points

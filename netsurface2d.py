@@ -169,7 +169,20 @@ class NetSurf2d:
             pb = self.get_surface_point( (i+1)%self.num_columns )
             area += self.get_triangle_area( pa, pb, self.center, calibration )
         return area
+    
+    def get_triangle_area( self, pa, pb, pc, calibration ):
+        # calculate the length of all sides
+        a = ( (pa[0]-pc[0])**2 + (pa[1]-pc[1])**2 ) ** 0.5
+        b = ( (pb[0]-pc[0])**2 + (pb[1]-pc[1])**2 ) ** 0.5
+        c = ( (pa[0]-pb[0])**2 + (pa[1]-pb[1])**2 ) ** 0.5
+        # calculate the semi-perimeter
+        s = (a + b + c) / 2
+        # return the area
+        return (s*(s-a)*(s-b)*(s-c)) ** 0.5
          
+    # #############################################################################
+    # ###  POINT SAMPLES INSIDE THE SEGMENTED AREA  ### ### ### ### ### ### ### ###
+    # #############################################################################
             
     def get_surface_point( self, column_id ):
         for k in range(self.K):
@@ -195,13 +208,3 @@ class NetSurf2d:
                     (k-1)/float(self.K) * (self.max_radius[1]-self.min_radius[1]) )
             points.append((x,y))
         return points
-    
-    def get_triangle_area( self, pa, pb, pc, calibration ):
-        # calculate the length of all sides
-        a = ( (pa[0]-pc[0])**2 + (pa[1]-pc[1])**2 ) ** 0.5
-        b = ( (pb[0]-pc[0])**2 + (pb[1]-pc[1])**2 ) ** 0.5
-        c = ( (pa[0]-pb[0])**2 + (pa[1]-pb[1])**2 ) ** 0.5
-        # calculate the semi-perimeter
-        s = (a + b + c) / 2
-        # return the area
-        return (s*(s-a)*(s-b)*(s-c)) ** 0.5
