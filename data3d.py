@@ -4,15 +4,18 @@ import maxflow
 import math
 from tifffile import imread, imsave
 import cPickle as pickle
+import cv2
 
 from netsurface2d import NetSurf2d
 from netsurface2dt import NetSurf2dt
 
-import matplotlib as plt
+import matplotlib
+import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from matplotlib.patches import Ellipse
 from matplotlib.collections import PatchCollection
 from matplotlib.path import Path
+import pylab
 
 class Data3d:
     """
@@ -234,9 +237,104 @@ class Data3d:
                 self.get_center_estimates( oid, [f], set_as_new=True )
             seed = self.object_seedpoints[oid][f]
 
-    # *****************************************************************************************************
-    # *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD ***
-    # *****************************************************************************************************
+    # ********************************************************************************************
+    # *** FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW *** 
+    # ********************************************************************************************
+    
+    def compute_flow( self, flowchannel, segchannel, folder=None, show=False, inline=False ):
+        '''
+        Computes and optionally displays flow and segmentation.
+        Parameters:
+            flowchannel   -  the images (t,y,x) the flow should be computed on
+            segchannel    -  the images (t,y,x) used for segmentation (might coincide with self.images
+                             but are not a list of 2d images but an 3d image stack.
+                             Note: segchannel is here ONLY used for visualization purposes!!!
+            folder        -  If not 'None' this folder will be used to store all visualized frames.
+            show          -  Rendered frames will be shown on screen or inline if set to 'True'
+            inline        -  False: openCV window will be used to display rendering
+                             True: matplotlib is used (can be used in jupyter inline mode!)
+        '''
+        assert flowchannel.shape[0] == len(self.images)
+        assert flowchannel.shape[0] == segchannel.shape[0]
+        
+        show_inline = inline
+        
+        self.flows = [None]*len(self.images)
+        
+        if show_inline:
+            from IPython.display import clear_output
+            pylab.rcParams['figure.figsize'] = (25, 10)
+            fig = plt.figure()
+
+        prvs = flowchannel[0]
+        hsv_shape = (prvs.shape[0],prvs.shape[1],3)
+        hsv = np.zeros(hsv_shape)
+        hsv[...,1] = 255
+
+        # collect the fiducial dots
+        dots = self.get_griddots_in(0,0,spacing=15)
+        for oid in range(1,len(self.object_names)):
+            dots.extend( self.get_griddots_in(0,oid,spacing=15) )
+
+        dot_history = [dots]
+        for f in range(flowchannel.shape[0]):
+            nxt = flowchannel[f]
+
+            flow = cv2.calcOpticalFlowFarneback(prev=prvs,
+                                                next=nxt,
+                                                pyr_scale=0.5,
+                                                levels=3,
+                                                winsize=5,
+                                                iterations=15,
+                                                poly_n=5,
+                                                poly_sigma=1.5,
+                                                flags=1)
+            self.flows[f]=flow
+
+            cells = []
+            for oid in range(len(self.object_names)):
+                if self.netsurf2dt is None:
+                    cells.append( self.get_result_polygone(oid,f) )
+                else:
+                    cells.append( self.get_result_polygone_2dt(oid,f) )
+
+            outframe, dots = self.draw_flow(flowchannel[f],
+                                       segchannel[f],
+                                       flow,
+                                       dots=dots,
+                                       dothist=dot_history,
+                                       polygones=cells,
+                                       show_flow_vectors=False)
+            dot_history.insert(0,dots)
+            rgbframe = cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB)
+
+            # save frames if desired
+            if not folder is None:
+                cv2.imwrite(folder+'frame%4d.png'%(f), outframe)
+
+            if show_inline:
+                pylab.axis('off')
+                pylab.title("flow")
+                pylab.imshow(rgbframe)
+                pylab.show()
+                clear_output(wait=True)
+                # optional quick exit (DEBUGGING)
+                if False and f==3:
+                    break
+            else:
+                cv2.imshow('flow',outframe)
+                k = cv2.waitKey(25) & 0xff
+                if k == 27: # ESC
+                    break
+
+            prvs = nxt
+
+        if not show_inline:
+            cv2.destroyAllWindows()
+    
+    # ***************************************************************************************
+    # *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD ***
+    # ***************************************************************************************
     
     def save( self, filename ):
         dictDataStorage = {
@@ -265,7 +363,69 @@ class Data3d:
         self.K = dictDataStorage['K']
         self.max_delta_k = dictDataStorage['max_delta_k']
         if compute_netsurfs: self.segment()
-            
+         
+    # *********************************************************************************************
+    # *** NUMBER_CRUNCH *** NUMBER_CRUNCH *** NUMBER_CRUNCH *** NUMBER_CRUNCH *** NUMBER_CRUNCH *** 
+    # *********************************************************************************************
+    def get_result_polygone( self, oid, frame ):
+        points=[]
+        col_vectors = self.netsurfs[oid][frame].col_vectors
+        netsurf = self.netsurfs[oid][frame]
+        for i in range( len(col_vectors) ):
+            points.append( netsurf.get_surface_point(i) )
+        return points
+    
+    def get_result_polygone_2dt( self, oid, frame ):
+        points=[]
+        col_vectors = self.netsurf2dt[oid].col_vectors
+        netsurf2dt = self.netsurf2dt[oid]
+        for i in range( len(col_vectors) ):
+            points.append( netsurf2dt.get_surface_point(frame,i) )
+        return points
+    
+    def get_dist_to_center( self, oid, frame ):
+        c = self.object_seedpoints[oid][frame]
+        poly = self.get_result_polygone_2dt( oid, frame )
+        dists = []
+        for p in poly:
+            dists.append( ((p[0]-c[0])**2+(p[1]-c[1])**2)**.5 )
+        return np.array(dists)
+    
+    def get_radial_velocities( self, oid, frame ):
+        dist_t   = self.get_dist_to_center( oid, frame )
+        dist_tp1 = self.get_dist_to_center( oid, frame+1 )
+        return dist_tp1-dist_t
+    
+    def get_column_flowvectors( self, oid, frame, column_id ):
+        '''
+        Returns all flowvector for one column of the net surface graph.
+        The length of the returned list of 2-tupel (flow-vectors x,y) corresponds to the 
+        number of pixels along the bresenham line from this objects seedpoint and the point
+        the net surface flow found the outline.
+        '''
+        flow = self.flows[frame]
+        point_c = self.object_seedpoints[oid][frame]
+        point_b = self.netsurfs[oid][frame].get_surface_point(column_id)
+        coords = bham.bresenhamline(np.array([point_c]), np.array([point_b]))
+        vectors = []
+        for c in coords:
+            fx,fy = flow[c[1],c[0]].T
+            vectors.append( (fx,fy) )
+        return vectors
+        
+    def get_all_flowvectors( self, oid, frame ):
+        '''
+        Returns a vector the length of 'self.num_columns'.
+        Each entry contains all flowvector for one column of the net surface graph.
+        The length of the returned list of 2-tupel (flow-vectors x,y) corresponds to the 
+        number of pixels along the bresenham line from this objects seedpoint and the point
+        the net surface flow found the outline.
+        '''
+        colvectors = []
+        for i in range(self.num_columns):
+            colvectors.append( self.get_column_flowvectors( oid, frame, i ) )
+        return colvectors
+        
     # **************************************************************************************************
     # *** VISUALIZATIONS *** VISUALIZATIONS *** VISUALIZATIONS *** VISUALIZATIONS *** VISUALIZATIONS ***
     # **************************************************************************************************
@@ -287,7 +447,7 @@ class Data3d:
             patches.append( Ellipse((center[0],center[1]),
                                     width=max_radius[0],
                                     height=max_radius[1]) )
-            p = PatchCollection(patches, cmap=plt.cm.jet, alpha=0.4, color='green')
+            p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
 
     def plot_result( self, frame, ax ):
@@ -307,7 +467,7 @@ class Data3d:
                 surface[i] = netsurf.get_surface_point(i)
             polygon = Polygon(surface, True)
             patches.append(polygon)
-            p = PatchCollection(patches, cmap=plt.cm.jet, alpha=0.4, color='green')
+            p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
 
     def plot_2dt_result( self, frame, ax ):
@@ -327,25 +487,9 @@ class Data3d:
                 surface[i] = netsurf2dt.get_surface_point(frame,i)
             polygon = Polygon(surface, True)
             patches.append(polygon)
-            p = PatchCollection(patches, cmap=plt.cm.jet, alpha=0.4, color='green')
+            p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
 
-    def get_result_polygone( self, frame, oid ):
-        points=[]
-        col_vectors = self.netsurfs[oid][frame].col_vectors
-        netsurf = self.netsurfs[oid][frame]
-        for i in range( len(col_vectors) ):
-            points.append( netsurf.get_surface_point(i) )
-        return points
-    
-    def get_result_polygone_2dt( self, frame, oid ):
-        points=[]
-        col_vectors = self.netsurf2dt[oid].col_vectors
-        netsurf2dt = self.netsurf2dt[oid]
-        for i in range( len(col_vectors) ):
-            points.append( netsurf2dt.get_surface_point(frame,i) )
-        return points
-    
     def get_radialdots_in( self, frame, oid, border_in=0, border_out=0, stepwidth=1 ):
         points=[]
         col_vectors = self.netsurfs[oid][frame].col_vectors
@@ -358,7 +502,7 @@ class Data3d:
     def get_griddots_in( self, frame, oid, spacing=5 ):
         points=[]
         
-        polypoints = np.array( self.get_result_polygone(frame,oid) )
+        polypoints = np.array( self.get_result_polygone(oid,frame) )
         poly = Path( polypoints, closed=True )
         
         minx = np.min(polypoints[:,0])
@@ -371,3 +515,74 @@ class Data3d:
                     points.append((x,y))
                     
         return points
+    
+    def draw_flow(self, im, im2, flow, 
+                  step=16, dots=[], dothist=[], polygones=[], show_flow_vectors=True):
+        '''
+        Renders an entire frame for flow movies. Lots of data needed here:
+            im          -  flowchannel image for this frame
+            im2         -  segchannel image for this frame (only needed to be visually complete)
+            flow        -  the computed flow
+            steps       -  number of pixel in between rendered flow arrows
+            dots        -  position of does to be drawn
+            dothist     -  old dots, so I can draw blue tails
+            polygones   -  used to draw cell outlines
+            show_flow_vectors - False: turn of rendering of grid spaced flow vectors (see 'steps')
+        '''
+        h,w = im.shape[:2]
+        y,x = np.mgrid[step/2:h:step,step/2:w:step].reshape(2,-1)
+        fx,fy = flow[y,x].T
+
+        # create image and draw
+        vis = cv2.cvtColor(np.zeros_like(im),cv2.COLOR_GRAY2BGR)
+        vis[:,:,1] = im
+        vis[:,:,2] = im2
+
+        # flow arrows
+        if ( show_flow_vectors ):
+            lines = vstack([x,y,x+fx,y+fy]).T.reshape(-1,2,2)
+            lines = int32(lines)
+
+            for (x1,y1),(x2,y2) in lines:
+                cv2.line(vis,(x1,y1),(x2,y2),(0,150,150),1)
+                cv2.circle(vis,(x1,y1),1,(0,150,150), -1)
+
+        # draw polygones
+        for polygone in polygones:
+            cv2.polylines(vis, np.array([polygone], 'int32'), 1, (208,224,64), 2)
+
+        intdots = []
+        for i, dot in enumerate(dots):
+            # compute new dot
+            try:
+                fx,fy = flow[dot[1],dot[0]].T
+            except:
+                continue #drop points that leave the image
+            newx = max(0,dot[0]+fx)
+            newy = max(0,dot[1]+fy)
+            newx = min(im.shape[1]-1,newx)
+            newy = min(im.shape[0]-1,newy)
+            newdot = ( newx, newy )
+
+            # history lines
+            color = (255,128,128)
+            for j,histdots in enumerate(dothist):
+                histdot = histdots[i]
+                p1 = ( int(histdot[0]), int(histdot[1]) )
+                if len(dothist) > j+1:
+                    histdot2 = dothist[j+1][i]
+                else:
+                    histdot2 = newdot
+                p2 = ( int(histdot2[0]), int(histdot2[1]) )
+                cv2.line(vis, p1, p2, color, 1)
+                color = tuple(np.array(color)-[10,10,10])
+                if min(color) < 0: 
+                    break
+
+            # point
+            intdot = ( int(newdot[0]), int(newdot[1]) )
+            cv2.circle(vis,intdot, 3, (0,165,255), 1)
+
+            intdots.append(intdot)
+
+        return vis, np.array(intdots)
