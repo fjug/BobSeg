@@ -383,6 +383,13 @@ class Data3d:
             points.append( netsurf2dt.get_surface_point(frame,i) )
         return points
     
+    def get_k_over_time( self, oid ):
+        k_over_time = np.zeros( (self.num_columns, len(self.images)) )
+        for f in range( len(self.images) ):
+            for i in range( self.num_columns ):
+                k_over_time[i,f] = self.netsurf2dt[oid].get_surface_index(f,i)
+        return k_over_time
+    
     def get_dist_to_center( self, oid, frame ):
         c = self.object_seedpoints[oid][frame]
         poly = self.get_result_polygone_2dt( oid, frame )
@@ -431,7 +438,7 @@ class Data3d:
     # **************************************************************************************************
     
     def plot_minmax( self, frame, ax ):
-        ax.imshow(self.images[frame])
+        ax.imshow(self.images[frame], plt.get_cmap('gray'))
         
         for oid in range(len(self.object_names)):
             patches = [] # collects patches to be plotted
@@ -451,7 +458,7 @@ class Data3d:
             ax.add_collection(p)
 
     def plot_result( self, frame, ax ):
-        ax.imshow(self.images[frame])
+        ax.imshow(self.images[frame], plt.get_cmap('gray'))
         
         for oid in range(len(self.object_names)):
             patches = [] # collects patches to be plotted
@@ -471,7 +478,7 @@ class Data3d:
             ax.add_collection(p)
 
     def plot_2dt_result( self, frame, ax ):
-        ax.imshow(self.images[frame])
+        ax.imshow(self.images[frame], plt.get_cmap('gray'))
         
         for oid in range(len(self.object_names)):
             patches = [] # collects patches to be plotted
@@ -586,3 +593,80 @@ class Data3d:
             intdots.append(intdot)
 
         return vis, np.array(intdots)
+
+    def draw_segmentation(self, im, show_centers=True, dont_use_2dt=False, folder=None, inline=False):
+        '''
+        Renders an entire frame visualizing the found segmentation.
+            im          -  image to be put in the background.
+            polygones   -  used to draw cell outlines
+        '''
+        frames = []
+        
+        if inline:
+            from IPython.display import clear_output
+            pylab.rcParams['figure.figsize'] = (25, 10)
+            fig = plt.figure()
+
+        for f in range(len(im)):
+            # create image for a single frame and draw
+            vis = cv2.cvtColor(np.zeros_like(im[f]),cv2.COLOR_GRAY2BGR)
+            vis[:,:,0] = 255.0*im[f]/np.max(im[f])
+            vis[:,:,1] = 255.0*im[f]/np.max(im[f])
+            vis[:,:,2] = 255.0*im[f]/np.max(im[f])
+            
+            # show center dot
+            if show_centers:
+                for oid in range(len(self.object_names)):
+                    color = int(128+128./len(self.object_names)*(oid+1))
+                    for f2 in range(f+1):
+                        cv2.circle(vis,tuple(self.object_seedpoints[oid][f2]), 3, (0,color,0), 1)
+            
+                    # show best fitting circle
+                    r = 0.
+                    for i in range( self.num_columns ):
+                        r += self.netsurf2dt[oid].get_surface_index(f,i)
+                    r /= self.num_columns
+                    r /= self.K
+                    r *= self.object_max_surf_dist[oid][f][0]-self.object_min_surf_dist[oid][f][0]
+                    r += self.object_min_surf_dist[oid][f][0]
+
+                    cv2.circle(vis,tuple(self.object_seedpoints[oid][f2]), int(r), (0,color,0), 1)
+            
+            # retrieve polygones
+            polygones = []
+            for oid in range(len(self.object_names)):
+                if self.netsurf2dt is None or dont_use_2dt:
+                    polygones.append( self.get_result_polygone(oid,f) )
+                else:
+                    polygones.append( self.get_result_polygone_2dt(oid,f) )
+
+            # draw polygones
+            for polygone in polygones:
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,0,0), 2)
+
+            rgbframe = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
+            frames.append(rgbframe)
+
+            # save frames if desired
+            if not folder is None:
+                cv2.imwrite(folder+'frame%4d.png'%(f), vis)
+
+            if inline:
+                pylab.axis('off')
+                pylab.title("segmentation")
+                pylab.imshow(rgbframe)
+                pylab.show()
+                clear_output(wait=True)
+                # optional quick exit (DEBUGGING)
+                if False and f==3:
+                    break
+            else:
+                cv2.imshow('segmentation',vis)
+                k = cv2.waitKey(25) & 0xff
+                if k == 27: # ESC
+                    break
+
+        if not inline:
+            cv2.destroyAllWindows()
+            
+        return frames

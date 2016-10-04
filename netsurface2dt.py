@@ -213,6 +213,12 @@ class NetSurf2dt:
                 (k-1)/float(self.K) * (self.max_radius[1]-self.min_radius[1]) )
         return (x,y)
     
+    def get_surface_index( self, t, column_id ):
+        for k in range(self.K):
+            if self.g.get_segment(self.nid(t,column_id,k)) == 1: break # leave as soon as k is first outside point
+        k-=1
+        return k
+    
     def get_inside_points( self, t, column_id ):
         points = []
         for k in range(self.K):
