@@ -310,7 +310,7 @@ class Data3d:
 
             # save frames if desired
             if not folder is None:
-                cv2.imwrite(folder+'frame%4d.png'%(f), outframe)
+                cv2.imwrite(folder+'frame%04d.png'%(f), outframe)
 
             if show_inline:
                 pylab.axis('off')
@@ -541,9 +541,11 @@ class Data3d:
         fx,fy = flow[y,x].T
 
         # create image and draw
-        vis = cv2.cvtColor(np.zeros_like(im),cv2.COLOR_GRAY2BGR)
-        vis[:,:,1] = im
-        vis[:,:,2] = im2
+        vis = cv2.cvtColor(np.uint8(np.zeros_like(im)),cv2.COLOR_GRAY2BGR)
+        im = im-np.min(im)
+        im2 = im2-np.min(im2)
+        vis[:,:,1] = (255*im)/np.max(im)
+        vis[:,:,2] = (255*im2)/np.max(im2)
 
         # flow arrows
         if ( show_flow_vectors ):
