@@ -272,10 +272,10 @@ class Data3d:
         hsv[...,1] = 255
 
         # collect the fiducial dots
-        dots = self.get_griddots_in(0,0,spacing=15)
+        dots = self.get_radialdots_in(0,0,10,30) # self.get_griddots_in(0,0,spacing=15)
         for oid in range(1,len(self.object_names)):
-            dots.extend( self.get_griddots_in(0,oid,spacing=15) )
-
+            dots.extend( self.get_radialdots_in(0,oid,10,30) ) # self.get_griddots_in(0,oid,spacing=15) )
+            
         dot_history = [dots]
         for f in range(flowchannel.shape[0]):
             nxt = flowchannel[f]
@@ -306,6 +306,7 @@ class Data3d:
                                        polygones=cells,
                                        show_flow_vectors=False)
             dot_history.insert(0,dots)
+
             rgbframe = cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB)
 
             # save frames if desired
@@ -497,13 +498,25 @@ class Data3d:
             p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
 
-    def get_radialdots_in( self, frame, oid, border_in=0, border_out=0, stepwidth=1 ):
+    def get_radialdots_in( self, frame, oid, spacing=5, pixels_inwards=5 ):
         points=[]
-        col_vectors = self.netsurfs[oid][frame].col_vectors
+        
         netsurf = self.netsurfs[oid][frame]
-        for i in range( len(col_vectors) ):
-            pts = netsurf.get_inside_points(i)
-            points.extend( pts[border_in:len(pts)-border_out:stepwidth] )
+        polypoints = np.array( self.get_result_polygone(oid,frame) )
+        
+        cx = netsurf.center[0]
+        cy = netsurf.center[1]
+        for i in range( len(netsurf.col_vectors) ):
+            x = polypoints[i,0]
+            y = polypoints[i,1]
+            dx = netsurf.col_vectors[i][0]
+            dy = netsurf.col_vectors[i][1]
+            x_new = int(x - dx * pixels_inwards)
+            y_new = int(y - dy * pixels_inwards)
+            # only if not shooting over center, add point!
+            if np.sign(x-cx) - np.sign(x_new-cx) == 0:
+                points.append((x_new, y_new))
+                
         return points
     
     def get_griddots_in( self, frame, oid, spacing=5 ):
