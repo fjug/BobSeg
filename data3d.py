@@ -693,3 +693,23 @@ class Data3d:
             cv2.destroyAllWindows()
             
         return frames
+    
+    def create_segmentation_image(self, dont_use_2dt=False):
+        segimgs = np.zeros_like(self.images)
+        for f in range(len(self.images)):
+            vis = np.zeros((np.shape(segimgs)[1],np.shape(segimgs)[2],3), np.uint8)
+
+            # retrieve polygones
+            polygones = []
+            for oid in range(len(self.object_names)):
+                if self.netsurf2dt is None or dont_use_2dt:
+                    polygones.append( self.get_result_polygone(oid,f) )
+                else:
+                    polygones.append( self.get_result_polygone_2dt(oid,f) )
+
+            # draw polygones
+            for polygone in polygones:
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (1,1,1), 1)
+
+            segimgs[f] = vis[:,:,0]
+        return segimgs
