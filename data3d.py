@@ -499,6 +499,14 @@ class Data3d:
             ax.add_collection(p)
 
     def get_radialdots_in( self, frame, oid, spacing=5, pixels_inwards=5 ):
+        '''
+        Returns list of (x,y) coordinates placed at given distance inside a segmented polygon.
+        Note that these points will only be placed if they where not shooting over the center.
+            frame            - guess
+            oid              - object id
+            spacing=5        - currently not working, idea would be that every k pixels a dot could be places
+            pixels_inwards=5 - how many pixels parallel (and inwards) from polygon will markers be placed?
+        '''
         points=[]
         
         netsurf = self.netsurfs[oid][frame]
