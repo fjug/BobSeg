@@ -13,24 +13,31 @@ import bresenham as bham
 class KymoSpider:
     """
     Implements Kymographs to visualize myesin and membrane flows
-    """
+    """    
     
-    num_legs = 4         # the number of legs of the spider
-    ea_ep_leg_index = -1 # index of the leg between Ea and Ep cell (-1 means unknown)
-    center = (100,100)   # the center point of the current spider
-    length = 100         # the length of each spider leg
-    
-    kymographs = [None]*num_legs   # the computed Kymographs for the membrane channel
-    kymo_myosin = [None]*num_legs  # the computed Kymographs for the myosin channel
-    kymo_seg = [None]*num_legs     # the computed Kymographs for the segmentation channel
-    kymo_flows = [None]*num_legs   # the computed flow Kymographs for the flow
-    
-    membrane = [None]*num_legs   # the position of the membrane for each spider leg
-    fiducials = [None]*num_legs  # the position of fiducials along spider legs
-    
-
-    def __init__( self, num_legs=8 ):
+    def __init__( self, num_legs=8, length=100, center=(100,100), rotation=0 ):
+        '''
+        CONSTRUCTION
+        num_leg     - the numbe of kymograph lines that spead aout aound the center
+        length      - the length of the legs in pixels
+        center      - (x,y)-tuple indicating the spider's center
+        rotation    - rotation of the spieder (in degrees, counter-clockwise)
+        '''
         self.num_legs = num_legs
+        self.spider_rotation = rotation
+        
+        self.ea_ep_leg_index = -1   # index of the leg between Ea and Ep cell (-1 means unknown)
+        self.center = center        # the center point of the current spider
+        self.length = length        # the length of each spider leg
+    
+        self.kymographs = [None]*num_legs   # the computed Kymographs for the membrane channel
+        self.kymo_myosin = [None]*num_legs  # the computed Kymographs for the myosin channel
+        self.kymo_seg = [None]*num_legs     # the computed Kymographs for the segmentation channel
+        self.kymo_flows = [None]*num_legs   # the computed flow Kymographs for the flow
+
+        self.membrane = [None]*num_legs   # the position of the membrane for each spider leg
+        self.fiducials = [None]*num_legs  # the position of fiducials along spider legs
+
         
     def get_projected_length(self, vector, vec2project):
         '''
@@ -57,25 +64,30 @@ class KymoSpider:
             values.append(image[c[1]][c[0]])
         return values
 
-    def move_fiducial(self, flow_kymo, initial_pos):
+    def move_fiducial(self, flow_kymo, init_positions):
         '''
         Moves a fiducial dot in a flow kymograph.
-        flow_kymo    - a flow Kymograph (x-axis is time, y-axis is space, intensities are y-projected flow)
-        initial_pos  - an integer defining the y-position of the fiducial dot in the flow Kymographs first column
+        flow_kymo      - a flow Kymograph (x-axis is time, y-axis is space, intensities are y-projected flow)
+        init_positions - an integer defining the y-position of the fiducial dot in the flow Kymographs first column
+        Returns a list of positions and a list of reset points (where fiducial moved out at bottom and a new one was created)
         '''
-        pos = initial_pos
+        pos = init_positions[0]
         positions = [pos]
+        resets = []
         for col in range(1,flow_kymo.shape[1]): # 1 because flow at t==0 is blank
             pos += flow_kymo[int(round(pos)),col]
-            pos = min(len(flow_kymo)-1,pos)
+            if pos>=len(flow_kymo)-1:
+                pos = init_positions[col]
+                resets.append((col,pos))
             positions.append(pos)
-        return positions
+        return positions, resets
     
     def set_ea_ep_leg(self, index):
         '''
         Sets the index of the lag that points toward the Ea/Ep cell boundary (-1 means undefined)
+        Note: index is 1-based to match the numbers in the overview plot.
         '''
-        self.ea_ep_leg_index = index
+        self.ea_ep_leg_index = index-1
     
     def set_center(self, x, y):
         '''
@@ -107,8 +119,9 @@ class KymoSpider:
         '''
         Returns a list if two (x,y)-coordinate tuples defining the start and endpoint of the desired spiderleg.
         '''
-        dx = int( math.sin(math.pi*2*legnum/self.num_legs)*self.length )
-        dy = int( math.cos(math.pi*2*legnum/self.num_legs)*self.length )
+        rad_rot=(self.spider_rotation/360.0)*math.pi*2
+        dx = int( math.sin(rad_rot+math.pi*2*legnum/self.num_legs)*self.length )
+        dy = int( math.cos(rad_rot+math.pi*2*legnum/self.num_legs)*self.length )
         x = self.center[0]+dx
         y = self.center[1]+dy
         return [self.center, (x,y)]
@@ -232,23 +245,34 @@ class KymoSpider:
         for legnum in range(self.num_legs):
             if legnum == self.ea_ep_leg_index:
                 style = 'y.'
+                style_reset = 'c*'
             else:
                 style = 'c.'
-                
-            pos = pos_fiducial
+                style_reset = 'y*'
+
+            #from IPython.core.debugger import Tracer; Tracer()()
+            
+            init_positions = [pos_fiducial] * len(self.kymographs[0])
             if rel_to_membrane:
-                pos+=np.argmax(self.kymo_seg[legnum][:,0])
+                for i in range(len(self.kymographs[0])):
+                    init_positions[i] += np.argmax(self.kymo_seg[legnum][:,i])
 
             ax = fig.add_subplot(2,self.num_legs+1,legnum+2)
             ax.imshow(self.kymographs[legnum], plt.get_cmap('gray'))
             kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
             ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=1.5, alpha=.9)
-            ax.plot(self.move_fiducial(self.kymo_flows[legnum],pos), style)
+            positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
+            if (len(resets)>0):
+                ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
+            ax.plot(positions, style)
             #ax.axis('off')
             
             ax = fig.add_subplot(2,self.num_legs+1,self.num_legs+1+legnum+2)
             #ax.imshow(self.kymo_flows[legnum], plt.get_cmap('gray'))
             ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
             ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=1.5, alpha=.9)
-            ax.plot(self.move_fiducial(self.kymo_flows[legnum],pos), style)
+            positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
+            if (len(resets)>0):
+                ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
+            ax.plot(positions, style)
             #ax.axis('off')
