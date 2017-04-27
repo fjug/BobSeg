@@ -22,13 +22,13 @@ class KymoSpider:
         length      - the length of the legs in pixels
         center      - (x,y)-tuple indicating the spider's center
         rotation    - rotation of the spieder (in degrees, counter-clockwise)
-        '''
+        '''        
         self.num_legs = num_legs
         self.spider_rotation = rotation
         
         self.ea_ep_leg_index = 0    # index of the leg between Ea and Ep cell (-1 means unknown/unused)
         self.center = center        # the center point of the current spider
-        self.length = length        # the length of each spider leg
+        self.set_leg_length(length) # the length of each spider leg
     
         self.kymographs = [None]*num_legs   # the computed Kymographs for the membrane channel
         self.kymo_myosin = [None]*num_legs  # the computed Kymographs for the myosin channel
@@ -84,7 +84,7 @@ class KymoSpider:
     
     def set_ea_ep_leg(self, index):
         '''
-        Sets the index of the lag that points toward the Ea/Ep cell boundary (-1 means undefined)
+        DEPRECATED: Sets the index of the lag that points toward the Ea/Ep cell boundary (-1 means undefined)
         Note: index is 1-based to match the numbers in the overview plot.
         '''
         self.ea_ep_leg_index = index-1
@@ -107,6 +107,9 @@ class KymoSpider:
         '''
         Sets the length of the individual Kymographs radiating out the center.
         '''
+        assert(self.center[0]>=length) # spider not allowed to stick out of image
+        assert(self.center[1]>=length) # spider not allowed to stick out of image
+
         self.length = length
         
     def get_leg_length(self):
@@ -150,6 +153,16 @@ class KymoSpider:
         img_seg       - the (t,y,x)-image data containing the segmentation outlines only
         img_flow      - the (c,t,y,x)-image data containing the flow information (c[0]==x, c[1]==y)
         '''
+        assert(np.shape(img_membrane)==np.shape(img_myosin))
+        assert(np.shape(img_membrane)==np.shape(img_seg))
+        assert(np.shape(img_flow)[0]==2)
+        assert(np.shape(img_membrane)==np.shape(img_flow[0]))
+        assert(np.shape(img_membrane)==np.shape(img_flow[1]))
+        
+        assert(np.shape(img_membrane)[1]-self.center[1] >= self.get_leg_length()) # spider must fit into image (y-dir.)
+        # I made it easy for me by checking for a circle around the spider fitting the image...
+        assert(np.shape(img_membrane)[2]-self.center[0] >= self.get_leg_length()) # spider must fit into image (x-dir.)
+        
         for legnum in range(self.num_legs):
             [p1,p2] = self.get_leg_line(legnum)
             r = self.compute_leg_kymos(img_membrane, img_myosin, img_seg, img_flow, p2, p1)
