@@ -115,6 +115,14 @@ class KymoSpider:
         '''
         return self.length
     
+    def get_kymo_line_coordinates(self, p_start, p_end):
+        '''
+        Returns self.get_leg_length() many coordinates from p_start to p_end (along staight line).
+        '''
+        xs = np.linspace(p_start[0], p_end[0], self.length, dtype=np.dtype(int))
+        ys = np.linspace(p_start[1], p_end[1], self.length, dtype=np.dtype(int))
+        return zip(xs,ys)
+    
     def get_leg_line(self, legnum):
         '''
         Returns a list if two (x,y)-coordinate tuples defining the start and endpoint of the desired spiderleg.
@@ -160,7 +168,8 @@ class KymoSpider:
         p_start       - tuple (x,y) pointing at the first pixel of the leg (kymo line)
         p_end         - tuble (x,y) pointing at the last pixel of the leg (kymo line)
         '''
-        line_pixels = bham.bresenhamline(np.array([p_start]),np.array([p_end]))
+        #line_pixels = bham.bresenhamline(np.array([p_start]),np.array([p_end]))
+        line_pixels = self.get_kymo_line_coordinates(p_start,p_end)
                                
         kymo_membrane = np.zeros((len(line_pixels),len(img_membrane)))
         kymo_myosin = np.zeros((len(line_pixels),len(img_myosin)))
