@@ -26,7 +26,7 @@ class KymoSpider:
         self.num_legs = num_legs
         self.spider_rotation = rotation
         
-        self.ea_ep_leg_index = -1   # index of the leg between Ea and Ep cell (-1 means unknown)
+        self.ea_ep_leg_index = 0    # index of the leg between Ea and Ep cell (-1 means unknown/unused)
         self.center = center        # the center point of the current spider
         self.length = length        # the length of each spider leg
     
