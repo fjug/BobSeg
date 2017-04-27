@@ -29,6 +29,9 @@ class KymoSpider:
     fiducials = [None]*num_legs  # the position of fiducials along spider legs
     
 
+    def __init__( self, num_legs=8 ):
+        self.num_legs = num_legs
+        
     def get_projected_length(self, vector, vec2project):
         '''
         Projects one vector onto another and returns the projected length.
