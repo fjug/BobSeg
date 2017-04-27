@@ -15,7 +15,7 @@ class KymoSpider:
     Implements Kymographs to visualize myesin and membrane flows
     """
     
-    num_legs = 8         # the number of legs of the spider
+    num_legs = 4         # the number of legs of the spider
     ea_ep_leg_index = -1 # index of the leg between Ea and Ep cell (-1 means unknown)
     center = (100,100)   # the center point of the current spider
     length = 100         # the length of each spider leg
@@ -187,39 +187,65 @@ class KymoSpider:
         '''
         Allows you to hand and subplot Axis and you will get the spider plotted onto it.
         '''
+        font1 = {'family': 'serif',
+                 'color':  'yellow',
+                 'weight': 'normal',
+                 'size': 12,
+                }
+
+        font2 = {'family': 'serif',
+                 'color':  'cyan',
+                 'weight': 'normal',
+                 'size': 12,
+                }
+
         for legnum in range(self.num_legs):
             [p1,p2] = self.get_leg_line(legnum)
             if legnum == self.ea_ep_leg_index:
                 ax.plot([p2[0],p1[0]],[p2[1],p1[1]],'y-',lw=2)
+                ax.text(p2[0],p2[1],str(legnum+1),font1)
             else:
-                ax.plot([p2[0],p1[0]],[p2[1],p1[1]],'g-',lw=2)
+                ax.plot([p2[0],p1[0]],[p2[1],p1[1]],'c-',lw=2)
+                ax.text(p2[0],p2[1],str(legnum+1),font2)
 
-    def plot(self, fig, pos_fiducial, rel_to_membrane=True):
+    def plot(self, fig, frame_first, frame_last, pos_fiducial, rel_to_membrane=True):
         '''
         Plots the computed Kymographs for the entire spider.
         fig             - the figure object to plot into
+        frame_first     - (y,x)-image of first frame
+        frame_last      - (y,x)-image of last frame
         pos_fiducial    - positioning of the initial fiducial marker (see rel_to_membrane for further info)
         rel_to_membrane - if True, pos_fiducial will be interpreted as a number relative to the segmented membrane pos
         '''
         fig.suptitle('Kymograph Spider', fontsize=16)
+        
+        ax = fig.add_subplot(2,self.num_legs+1,1)
+        ax.imshow(frame_first)
+        self.plot_spider_on_axis(ax)
+        ax = fig.add_subplot(2,self.num_legs+1,self.num_legs+1+1)
+        ax.imshow(frame_last)
+        self.plot_spider_on_axis(ax)
+
         for legnum in range(self.num_legs):
             if legnum == self.ea_ep_leg_index:
                 style = 'y.'
             else:
-                style = 'g.'
+                style = 'c.'
                 
             pos = pos_fiducial
             if rel_to_membrane:
                 pos+=np.argmax(self.kymo_seg[legnum][:,0])
 
-            ax = fig.add_subplot(2,self.num_legs,legnum+1)
+            ax = fig.add_subplot(2,self.num_legs+1,legnum+2)
             ax.imshow(self.kymographs[legnum], plt.get_cmap('gray'))
             kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
-            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=2, alpha=.9)
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=1.5, alpha=.9)
             ax.plot(self.move_fiducial(self.kymo_flows[legnum],pos), style)
+            #ax.axis('off')
             
-            ax = fig.add_subplot(2,self.num_legs,self.num_legs+legnum+1)
+            ax = fig.add_subplot(2,self.num_legs+1,self.num_legs+1+legnum+2)
             #ax.imshow(self.kymo_flows[legnum], plt.get_cmap('gray'))
             ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
-            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=2, alpha=.9)
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=1.5, alpha=.9)
             ax.plot(self.move_fiducial(self.kymo_flows[legnum],pos), style)
+            #ax.axis('off')
