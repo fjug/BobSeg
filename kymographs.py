@@ -269,7 +269,7 @@ class KymoSpider:
             ax = fig.add_subplot(2,self.num_legs+1,legnum+2)
             ax.imshow(self.kymographs[legnum], plt.get_cmap('gray'))
             kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
-            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=1.5, alpha=.9)
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
             positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
             if (len(resets)>0):
                 ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
@@ -279,7 +279,7 @@ class KymoSpider:
             ax = fig.add_subplot(2,self.num_legs+1,self.num_legs+1+legnum+2)
             #ax.imshow(self.kymo_flows[legnum], plt.get_cmap('gray'))
             ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
-            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=1.5, alpha=.9)
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=300, alpha=.9)
             positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
             if (len(resets)>0):
                 ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
