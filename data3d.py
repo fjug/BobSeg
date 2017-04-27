@@ -709,7 +709,9 @@ class Data3d:
 
             # draw polygones
             for polygone in polygones:
-                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (1,1,1), 1)
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (128,128,128), 2)
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,255,255), 1)
+
 
             segimgs[f] = vis[:,:,0]
         return segimgs
