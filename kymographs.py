@@ -74,13 +74,36 @@ class KymoSpider:
         pos = init_positions[0]
         positions = [pos]
         resets = []
-        for col in range(1,flow_kymo.shape[1]): # 1 because flow at t==0 is blank
+        for col in range(1,len(flow_kymo[0])): # 1 because flow at t==0 is blank
             pos += flow_kymo[int(round(pos)),col]
             if pos>=len(flow_kymo)-1:
                 pos = init_positions[col]
                 resets.append((col,pos))
             positions.append(pos)
         return positions, resets
+    
+    def get_flow_stats(self, flow_kymo, start_idx, length=None):
+        '''
+        Computes the min,max,average (projected) and standard deviation of values along the given flow_kymo.
+        t          -- time index in flow_kymo
+        start_idx  -- index at which to start averaging (its a row idex in flow_kymo)
+        length     -- number of pixels downwards from start_idx to take avg of
+        '''
+        avg = np.zeros(len(flow_kymo[0]))
+        minimum = np.zeros_like(avg)
+        maximum = np.zeros_like(avg)
+        std = np.zeros_like(avg)
+        
+        for col in range(0,len(flow_kymo[0])):
+            end_idx = len(flow_kymo)
+            if length is not None:
+                end_idx = int( min(end_idx, start_idx[col]+length) )
+            minimum[col] = np.min(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            maximum[col] = np.max(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            avg[col]     = np.average(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            std[col]     = np.std(flow_kymo.T[col,int(start_idx[col]):end_idx])
+
+        return minimum, avg, maximum, std
     
     def set_ea_ep_leg(self, index):
         '''
@@ -257,6 +280,7 @@ class KymoSpider:
         '''
         fig.suptitle('Kymograph Spider', fontsize=16)
         
+        # - - - PLOT OVERVIEWS - - - -
         ax = fig.add_subplot(2,self.num_legs+1,1)
         ax.imshow(frame_first)
         self.plot_spider_on_axis(ax)
@@ -273,33 +297,44 @@ class KymoSpider:
                 style_reset = 'y*'
 
             #from IPython.core.debugger import Tracer; Tracer()()
-            
+                        
+            # compute all places where fiducials would be reinitiated IF they where to drop out at the bottom
             init_positions = [pos_fiducial] * len(self.kymographs[0])
             if rel_to_membrane:
                 for i in range(len(self.kymographs[0])):
                     init_positions[i] += np.argmax(self.kymo_seg[legnum][:,i])
+                    
+            # make kymo_seg transparent (in order to be able to plot on top of another kymo)
+            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
 
+            # - - - start the plotting - - - -
+            
             ax = fig.add_subplot(2,self.num_legs+1,legnum+2)
             ax.imshow(self.kymographs[legnum], plt.get_cmap('gray'))
-            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
+            # - - - - 
             ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
+            # - - - -
             positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
             if (len(resets)>0):
                 ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
             ax.plot(positions, style)
             #ax.axis('off')
             
+            # - - - -
+            
             ax = fig.add_subplot(2,self.num_legs+1,self.num_legs+1+legnum+2)
             #ax.imshow(self.kymo_flows[legnum], plt.get_cmap('gray'))
             ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
+            # - - - -
             ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=300, alpha=.9)
+            # - - - -
             positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
             if (len(resets)>0):
                 ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
             ax.plot(positions, style)
             #ax.axis('off')
 
-    def plot_slippage(self, fig):
+    def plot_slippage(self, fig, offset_from_membrane=0, length=None):
         '''
         Plots the quantified slippage rates.
         fig   -  the figure object to plot into
@@ -307,5 +342,43 @@ class KymoSpider:
         fig.suptitle('Quantified Slippage', fontsize=16)
         
         for legnum in range(self.num_legs):
-            ax = fig.add_subplot(2,self.num_legs+1,legnum+2)
+            if legnum == self.ea_ep_leg_index:
+                style = 'y.'
+            else:
+                style = 'c.'
 
+            # read the segmented membrane location out of kymo_seg
+            pos_membranes = np.zeros( len(self.kymographs[0][0]) )
+            for col in range( len(self.kymographs[0][0]) ):
+                pos_membranes[col] = np.argmax(self.kymo_seg[legnum][:,col])
+            
+            # get the average inward flow below the membrane
+            #print np.shape(pos_membranes), pos_membranes
+            minf, avgf, maxf, stdf = self.get_flow_stats(self.kymo_flows[legnum],pos_membranes+offset_from_membrane,length)
+            
+            # make kymo_seg transparent (in order to be able to plot on top of another kymo)
+            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
+
+            # - - - start the plotting - - - -
+                                     
+            ax = fig.add_subplot(2,self.num_legs,legnum+1)
+            ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
+            ax.plot(pos_membranes+offset_from_membrane, style)
+            if length is None:
+                ax.plot(np.zeros_like(pos_membranes)+len(self.kymographs[0]), style)
+            else:
+                ax.plot(pos_membranes+offset_from_membrane+length, style)
+
+            ax = fig.add_subplot(2,self.num_legs,self.num_legs+legnum+1)
+            ax.set_ylim([-10,10])
+            ax.plot(minf, color='gray')
+            ax.plot(maxf, color='grey')
+            ax.plot(avgf, 'b-')
+            ax.plot(np.zeros_like(avgf), 'r-')
+            ax.plot(self.moving_average(avgf, n=5), color='orange')
+
+    def moving_average(self, a, n=3):
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        return ret[n - 1:] / n
