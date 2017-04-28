@@ -334,12 +334,19 @@ class KymoSpider:
             ax.plot(positions, style)
             #ax.axis('off')
 
-    def plot_slippage(self, fig, offset_from_membrane=0, length=None):
+    def moving_average(self, a, n=3):
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        return ret[n - 1:] / n
+    
+    def plot_column_flow_stats(self, fig, offset_from_membrane=0, length=None):
         '''
-        Plots the quantified slippage rates.
-        fig   -  the figure object to plot into
+        Plots the several statistics computed per column of the computed kymographs.
+        fig                   -  the figure object to plot into
+        offset_from_membrane  -  stats to be computed in a stripe below membrane starting that many pixels below
+        length                -  pixel height of stripe within which stats are computed (if None, stripe reaches until bottom)
         '''
-        fig.suptitle('Quantified Slippage', fontsize=16)
+        fig.suptitle('Flow Stats', fontsize=16)
         
         for legnum in range(self.num_legs):
             if legnum == self.ea_ep_leg_index:
@@ -378,7 +385,74 @@ class KymoSpider:
             ax.plot(np.zeros_like(avgf), 'r-')
             ax.plot(self.moving_average(avgf, n=5), color='orange')
 
-    def moving_average(self, a, n=3):
-        ret = np.cumsum(a, dtype=float)
-        ret[n:] = ret[n:] - ret[:-n]
-        return ret[n - 1:] / n
+    def get_slippage_rates(self, flow_per_t, pos_membranes, delta_t=5):
+        '''
+        Computes slippage rates.
+        flow_per_t      -  flow along that leg (list of projected flows per column (time))
+        pos_membranes   -  position of membrane per kymo column (time)
+        delta_t         -  distance between columns in kymos used to compute slippage
+        '''
+        slippage = np.zeros(len(pos_membranes)-delta_t)
+        
+        for t in range(len(pos_membranes)-delta_t): # for each column that allows us to jump delta_t forward
+            t2 = t + delta_t
+            delta_membrane = pos_membranes[t2] - pos_membranes[t]
+            delta_flow = np.sum(flow_per_t[t:t2+1])
+            slippage[t]=delta_flow-delta_membrane
+        return slippage
+            
+
+    def plot_slippage(self, fig, delta_t=5, offset_from_membrane=0, length=None):
+        '''
+        Plots the several statistics computed per column of the computed kymographs.
+        fig                   -  the figure object to plot into
+        delta_t               -  distance between columns in kymos used to compute slippage
+        offset_from_membrane  -  stats to be computed in a stripe below membrane starting that many pixels below
+        length                -  pixel height of stripe within which stats are computed (if None, stripe reaches until bottom)
+
+        '''
+        fig.suptitle('Slippage', fontsize=16)
+        
+        for legnum in range(self.num_legs):
+            if legnum == self.ea_ep_leg_index:
+                style = 'y.'
+            else:
+                style = 'c.'
+
+            # read the segmented membrane location out of kymo_seg
+            pos_membranes = np.zeros( len(self.kymographs[0][0]) )
+            for col in range( len(self.kymographs[0][0]) ):
+                pos_membranes[col] = np.argmax(self.kymo_seg[legnum][:,col])
+            
+            # get the average inward flow below the membrane
+            #print np.shape(pos_membranes), pos_membranes
+            minf, avgf, maxf, stdf = self.get_flow_stats(self.kymo_flows[legnum],pos_membranes+offset_from_membrane,length)
+            
+            # make kymo_seg transparent (in order to be able to plot on top of another kymo)
+            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
+            
+            # Finally we can compute the slippage!!!
+            slippage_ys = self.get_slippage_rates(avgf, pos_membranes)
+            slippage_xs = np.array(range(len(slippage_ys)))+int(delta_t/2)
+
+            # - - - start the plotting - - - -
+                                     
+            ax = fig.add_subplot(2,self.num_legs,legnum+1)
+            ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
+            ax.plot(pos_membranes+offset_from_membrane, style)
+            if length is None:
+                ax.plot(np.zeros_like(pos_membranes)+len(self.kymographs[0]), style)
+            else:
+                ax.plot(pos_membranes+offset_from_membrane+length, style)
+
+            ax = fig.add_subplot(2,self.num_legs,self.num_legs+legnum+1)
+            ax.set_ylim([-25,25])
+            ax.plot(np.zeros_like(avgf), color='gray')
+            ax.plot(slippage_xs, slippage_ys, color='blue')
+            # flupp
+            window_width = 15
+            ys = self.moving_average(slippage_ys, n=window_width)
+            xs = np.array(range(len(ys))) + int((delta_t+window_width)/2)
+            ax.plot(xs, ys, color='red')
+
