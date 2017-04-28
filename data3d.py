@@ -499,6 +499,14 @@ class Data3d:
             ax.add_collection(p)
 
     def get_radialdots_in( self, frame, oid, spacing=5, pixels_inwards=5 ):
+        '''
+        Returns list of (x,y) coordinates placed at given distance inside a segmented polygon.
+        Note that these points will only be placed if they where not shooting over the center.
+            frame            - guess
+            oid              - object id
+            spacing=5        - currently not working, idea would be that every k pixels a dot could be places
+            pixels_inwards=5 - how many pixels parallel (and inwards) from polygon will markers be placed?
+        '''
         points=[]
         
         netsurf = self.netsurfs[oid][frame]
@@ -685,3 +693,25 @@ class Data3d:
             cv2.destroyAllWindows()
             
         return frames
+    
+    def create_segmentation_image(self, dont_use_2dt=False):
+        segimgs = np.zeros_like(self.images)
+        for f in range(len(self.images)):
+            vis = np.zeros((np.shape(segimgs)[1],np.shape(segimgs)[2],3), np.uint8)
+
+            # retrieve polygones
+            polygones = []
+            for oid in range(len(self.object_names)):
+                if self.netsurf2dt is None or dont_use_2dt:
+                    polygones.append( self.get_result_polygone(oid,f) )
+                else:
+                    polygones.append( self.get_result_polygone_2dt(oid,f) )
+
+            # draw polygones
+            for polygone in polygones:
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (128,128,128), 2)
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,255,255), 1)
+
+
+            segimgs[f] = vis[:,:,0]
+        return segimgs
