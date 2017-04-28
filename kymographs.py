@@ -298,3 +298,14 @@ class KymoSpider:
                 ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
             ax.plot(positions, style)
             #ax.axis('off')
+
+    def plot_slippage(self, fig):
+        '''
+        Plots the quantified slippage rates.
+        fig   -  the figure object to plot into
+        '''
+        fig.suptitle('Quantified Slippage', fontsize=16)
+        
+        for legnum in range(self.num_legs):
+            ax = fig.add_subplot(2,self.num_legs+1,legnum+2)
+
