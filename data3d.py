@@ -619,11 +619,22 @@ class Data3d:
 
     def draw_segmentation(self, im, show_centers=True, dont_use_2dt=False, folder=None, inline=False):
         '''
-        Renders an entire frame visualizing the found segmentation.
-            im          -  image to be put in the background.
-            polygones   -  used to draw cell outlines
+        Draws movie frames for segmented objects with/without center points being visible.
+            im            -  the (raw?) image data to be rendered in the background
+            show_centers  -  also center points will be draws (if True)
+            dont_use_2dt  -  uses available 2dt data (if True; 2d data otherwise)
+            folder        -  the folder to store the images in
+            inline        -  if True it will show results within jupyter, otherwise in cv2 frame
+        This method will return (frames, centers, polygones, radii), which is
+            - a list of images (the frames of the created movie).
+            - a list of (x,y)-tuples giving the found center points
+            - a list of a list of polygones per frame (each polygone again given by a list of (x,y)-points)
+            - a list of radii that denote the best fitting cirlcle (centered at the corresponding center point)
         '''
         frames = []
+        centers = []
+        radii = []
+        all_polygones = []
         
         if inline:
             from IPython.display import clear_output
@@ -642,7 +653,9 @@ class Data3d:
                 for oid in range(len(self.object_names)):
                     color = int(128+128./len(self.object_names)*(oid+1))
                     for f2 in range(f+1):
-                        cv2.circle(vis,tuple(self.object_seedpoints[oid][f2]), 3, (0,color,0), 1)
+                        center = tuple(self.object_seedpoints[oid][f2])
+                        cv2.circle(vis, center, 3, (0,color,0), 1)
+                        centers.append(center)
             
                     # show best fitting circle
                     r = 0.
@@ -652,6 +665,7 @@ class Data3d:
                     r /= self.K
                     r *= self.object_max_surf_dist[oid][f][0]-self.object_min_surf_dist[oid][f][0]
                     r += self.object_min_surf_dist[oid][f][0]
+                    radii.append(r)
 
                     cv2.circle(vis,tuple(self.object_seedpoints[oid][f2]), int(r), (0,color,0), 1)
             
@@ -662,7 +676,8 @@ class Data3d:
                     polygones.append( self.get_result_polygone(oid,f) )
                 else:
                     polygones.append( self.get_result_polygone_2dt(oid,f) )
-
+            all_polygones.append(polygones)
+                    
             # draw polygones
             for polygone in polygones:
                 cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,0,0), 2)
@@ -692,7 +707,7 @@ class Data3d:
         if not inline:
             cv2.destroyAllWindows()
             
-        return frames
+        return frames, centers, all_polygones, radii
     
     def create_segmentation_image(self, dont_use_2dt=False):
         segimgs = np.zeros_like(self.images)
