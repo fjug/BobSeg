@@ -272,10 +272,10 @@ class Data3d:
         hsv[...,1] = 255
 
         # collect the fiducial dots
-        dots = self.get_griddots_in(0,0,spacing=15)
+        dots = self.get_radialdots_in(0,0,10,30) # self.get_griddots_in(0,0,spacing=15)
         for oid in range(1,len(self.object_names)):
-            dots.extend( self.get_griddots_in(0,oid,spacing=15) )
-
+            dots.extend( self.get_radialdots_in(0,oid,10,30) ) # self.get_griddots_in(0,oid,spacing=15) )
+            
         dot_history = [dots]
         for f in range(flowchannel.shape[0]):
             nxt = flowchannel[f]
@@ -306,6 +306,7 @@ class Data3d:
                                        polygones=cells,
                                        show_flow_vectors=False)
             dot_history.insert(0,dots)
+
             rgbframe = cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB)
 
             # save frames if desired
@@ -497,13 +498,33 @@ class Data3d:
             p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
 
-    def get_radialdots_in( self, frame, oid, border_in=0, border_out=0, stepwidth=1 ):
+    def get_radialdots_in( self, frame, oid, spacing=5, pixels_inwards=5 ):
+        '''
+        Returns list of (x,y) coordinates placed at given distance inside a segmented polygon.
+        Note that these points will only be placed if they where not shooting over the center.
+            frame            - guess
+            oid              - object id
+            spacing=5        - currently not working, idea would be that every k pixels a dot could be places
+            pixels_inwards=5 - how many pixels parallel (and inwards) from polygon will markers be placed?
+        '''
         points=[]
-        col_vectors = self.netsurfs[oid][frame].col_vectors
+        
         netsurf = self.netsurfs[oid][frame]
-        for i in range( len(col_vectors) ):
-            pts = netsurf.get_inside_points(i)
-            points.extend( pts[border_in:len(pts)-border_out:stepwidth] )
+        polypoints = np.array( self.get_result_polygone(oid,frame) )
+        
+        cx = netsurf.center[0]
+        cy = netsurf.center[1]
+        for i in range( len(netsurf.col_vectors) ):
+            x = polypoints[i,0]
+            y = polypoints[i,1]
+            dx = netsurf.col_vectors[i][0]
+            dy = netsurf.col_vectors[i][1]
+            x_new = int(x - dx * pixels_inwards)
+            y_new = int(y - dy * pixels_inwards)
+            # only if not shooting over center, add point!
+            if np.sign(x-cx) - np.sign(x_new-cx) == 0:
+                points.append((x_new, y_new))
+                
         return points
     
     def get_griddots_in( self, frame, oid, spacing=5 ):
@@ -598,11 +619,22 @@ class Data3d:
 
     def draw_segmentation(self, im, show_centers=True, dont_use_2dt=False, folder=None, inline=False):
         '''
-        Renders an entire frame visualizing the found segmentation.
-            im          -  image to be put in the background.
-            polygones   -  used to draw cell outlines
+        Draws movie frames for segmented objects with/without center points being visible.
+            im            -  the (raw?) image data to be rendered in the background
+            show_centers  -  also center points will be draws (if True)
+            dont_use_2dt  -  uses available 2dt data (if True; 2d data otherwise)
+            folder        -  the folder to store the images in
+            inline        -  if True it will show results within jupyter, otherwise in cv2 frame
+        This method will return (frames, centers, polygones, radii), which is
+            - a list of images (the frames of the created movie).
+            - a list of (x,y)-tuples giving the found center points
+            - a list of a list of polygones per frame (each polygone again given by a list of (x,y)-points)
+            - a list of radii that denote the best fitting cirlcle (centered at the corresponding center point)
         '''
         frames = []
+        centers = []
+        radii = []
+        all_polygones = []
         
         if inline:
             from IPython.display import clear_output
@@ -621,7 +653,9 @@ class Data3d:
                 for oid in range(len(self.object_names)):
                     color = int(128+128./len(self.object_names)*(oid+1))
                     for f2 in range(f+1):
-                        cv2.circle(vis,tuple(self.object_seedpoints[oid][f2]), 3, (0,color,0), 1)
+                        center = tuple(self.object_seedpoints[oid][f2])
+                        cv2.circle(vis, center, 3, (0,color,0), 1)
+                        centers.append(center)
             
                     # show best fitting circle
                     r = 0.
@@ -631,6 +665,7 @@ class Data3d:
                     r /= self.K
                     r *= self.object_max_surf_dist[oid][f][0]-self.object_min_surf_dist[oid][f][0]
                     r += self.object_min_surf_dist[oid][f][0]
+                    radii.append(r)
 
                     cv2.circle(vis,tuple(self.object_seedpoints[oid][f2]), int(r), (0,color,0), 1)
             
@@ -641,7 +676,8 @@ class Data3d:
                     polygones.append( self.get_result_polygone(oid,f) )
                 else:
                     polygones.append( self.get_result_polygone_2dt(oid,f) )
-
+            all_polygones.append(polygones)
+                    
             # draw polygones
             for polygone in polygones:
                 cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,0,0), 2)
@@ -671,4 +707,26 @@ class Data3d:
         if not inline:
             cv2.destroyAllWindows()
             
-        return frames
+        return frames, centers, all_polygones, radii
+    
+    def create_segmentation_image(self, dont_use_2dt=False):
+        segimgs = np.zeros_like(self.images)
+        for f in range(len(self.images)):
+            vis = np.zeros((np.shape(segimgs)[1],np.shape(segimgs)[2],3), np.uint8)
+
+            # retrieve polygones
+            polygones = []
+            for oid in range(len(self.object_names)):
+                if self.netsurf2dt is None or dont_use_2dt:
+                    polygones.append( self.get_result_polygone(oid,f) )
+                else:
+                    polygones.append( self.get_result_polygone_2dt(oid,f) )
+
+            # draw polygones
+            for polygone in polygones:
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (128,128,128), 2)
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,255,255), 1)
+
+
+            segimgs[f] = vis[:,:,0]
+        return segimgs
