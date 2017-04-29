@@ -299,9 +299,9 @@ class KymoSpider:
             #from IPython.core.debugger import Tracer; Tracer()()
                         
             # compute all places where fiducials would be reinitiated IF they where to drop out at the bottom
-            init_positions = [pos_fiducial] * len(self.kymographs[0])
+            init_positions = [pos_fiducial] * len(self.kymographs[0][0])
             if rel_to_membrane:
-                for i in range(len(self.kymographs[0])):
+                for i in range(len(self.kymographs[0][0])):
                     init_positions[i] += np.argmax(self.kymo_seg[legnum][:,i])
                     
             # make kymo_seg transparent (in order to be able to plot on top of another kymo)
