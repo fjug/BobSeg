@@ -82,7 +82,7 @@ class KymoSpider:
             positions.append(pos)
         return positions, resets
     
-    def get_flow_stats(self, flow_kymo, start_idx, length=None):
+    def get_flow_stats(self, flow_kymo, start_idx, length=None, move_window=False):
         '''
         Computes the min,max,average (projected) and standard deviation of values along the given flow_kymo.
         t          -- time index in flow_kymo
@@ -93,8 +93,11 @@ class KymoSpider:
         minimum = np.zeros_like(avg)
         maximum = np.zeros_like(avg)
         std = np.zeros_like(avg)
+        resets = []
         
         for col in range(0,len(flow_kymo[0])):
+            if start_idx[col]<0:
+                start_idx[col] = 0
             end_idx = len(flow_kymo)
             if length is not None:
                 end_idx = int( min(end_idx, start_idx[col]+length) )
@@ -102,8 +105,16 @@ class KymoSpider:
             maximum[col] = np.max(flow_kymo.T[col,int(start_idx[col]):end_idx])
             avg[col]     = np.average(flow_kymo.T[col,int(start_idx[col]):end_idx])
             std[col]     = np.std(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            # if desired, move window around by the measured flow
+            if move_window and (col+1)<len(flow_kymo[0]):
+                nextpos = start_idx[col] + avg[col]
+                # respawn in case the window is pushed down so it would stick out at bottom
+                if (nextpos+length) < len(flow_kymo):
+                    start_idx[col+1] = nextpos
+                else:
+                    resets.append((col+1,start_idx[col+1]))
 
-        return minimum, avg, maximum, std
+        return minimum, avg, maximum, std, start_idx, resets
     
     def set_ea_ep_leg(self, index):
         '''
@@ -361,7 +372,8 @@ class KymoSpider:
             
             # get the average inward flow below the membrane
             #print np.shape(pos_membranes), pos_membranes
-            minf, avgf, maxf, stdf = self.get_flow_stats(self.kymo_flows[legnum],pos_membranes+offset_from_membrane,length)
+            minf, avgf, maxf, stdf, pos_intervals, resets = \
+                    self.get_flow_stats(self.kymo_flows[legnum],pos_membranes+offset_from_membrane,length)
             
             # make kymo_seg transparent (in order to be able to plot on top of another kymo)
             kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
@@ -402,22 +414,27 @@ class KymoSpider:
         return slippage
             
 
-    def plot_slippage(self, fig, delta_t=5, offset_from_membrane=0, length=None):
+    def plot_slippage(self, fig, delta_t=5, offset_from_membrane=0, length=None, move_window=False, smoothing_width=15):
         '''
         Plots the several statistics computed per column of the computed kymographs.
         fig                   -  the figure object to plot into
         delta_t               -  distance between columns in kymos used to compute slippage
         offset_from_membrane  -  stats to be computed in a stripe below membrane starting that many pixels below
         length                -  pixel height of stripe within which stats are computed (if None, stripe reaches until bottom)
-
+        move_window           -  if true, the window we use to read flows is pushed around by the flow (static pos. otherwise)
+        smoothing_width       -  width of sliding average window size
         '''
         fig.suptitle('Slippage', fontsize=16)
         
+        slippages = []
+        smoothed_slippages = []
         for legnum in range(self.num_legs):
             if legnum == self.ea_ep_leg_index:
-                style = 'y.'
+                style = 'y-'
+                style_reset = 'C*'
             else:
-                style = 'c.'
+                style = 'c-'
+                style_reset = 'y*'
 
             # read the segmented membrane location out of kymo_seg
             pos_membranes = np.zeros( len(self.kymographs[0][0]) )
@@ -426,7 +443,8 @@ class KymoSpider:
             
             # get the average inward flow below the membrane
             #print np.shape(pos_membranes), pos_membranes
-            minf, avgf, maxf, stdf = self.get_flow_stats(self.kymo_flows[legnum],pos_membranes+offset_from_membrane,length)
+            minf, avgf, maxf, stdf, pos_intervals, resets = \
+                        self.get_flow_stats(self.kymo_flows[legnum], pos_membranes+offset_from_membrane,length, move_window)
             
             # make kymo_seg transparent (in order to be able to plot on top of another kymo)
             kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
@@ -440,19 +458,25 @@ class KymoSpider:
             ax = fig.add_subplot(2,self.num_legs,legnum+1)
             ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
             ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
-            ax.plot(pos_membranes+offset_from_membrane, style)
+            ax.plot(pos_intervals, style)
             if length is None:
                 ax.plot(np.zeros_like(pos_membranes)+len(self.kymographs[0]), style)
             else:
-                ax.plot(pos_membranes+offset_from_membrane+length, style)
+                ax.plot(pos_intervals+length, style)
+            if (len(resets)>0):
+                ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
 
             ax = fig.add_subplot(2,self.num_legs,self.num_legs+legnum+1)
             ax.set_ylim([-25,25])
             ax.plot(np.zeros_like(avgf), color='gray')
             ax.plot(slippage_xs, slippage_ys, color='blue')
             # flupp
-            window_width = 15
-            ys = self.moving_average(slippage_ys, n=window_width)
-            xs = np.array(range(len(ys))) + int((delta_t+window_width)/2)
-            ax.plot(xs, ys, color='red')
+            running_average_ys = self.moving_average(slippage_ys, n=smoothing_width)
+            running_average_xs = np.array(range(len(running_average_ys))) + int((delta_t+smoothing_width)/2)
+            ax.plot(running_average_xs, running_average_ys, color='red')
+            
+            # store plotted values for later use
+            slippages.append( (slippage_xs, slippage_ys) )
+            smoothed_slippages.append( (running_average_xs, running_average_ys) )
+        return (slippages, smoothed_slippages)
 
