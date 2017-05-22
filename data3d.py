@@ -448,14 +448,14 @@ class Data3d:
             min_radius = self.object_min_surf_dist[oid][frame]
             max_radius = self.object_max_surf_dist[oid][frame]
             
-            ax.scatter(center[0],center[1], c='y', marker='o')
+            # ax.scatter(center[0],center[1], c='y', marker='x')
             patches.append( Ellipse((center[0],center[1]),
-                                    width=min_radius[0],
-                                    height=min_radius[1]) )
+                                    width=(min_radius[0]*2),
+                                    height=(min_radius[1])*2) )
             patches.append( Ellipse((center[0],center[1]),
-                                    width=max_radius[0],
-                                    height=max_radius[1]) )
-            p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
+                                    width=(max_radius[0]*2),
+                                    height=(max_radius[1]*2)) )
+            p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.3, color='yellow')
             ax.add_collection(p)
 
     def plot_result( self, frame, ax ):
