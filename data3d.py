@@ -552,8 +552,8 @@ class Data3d:
             im2         -  segchannel image for this frame (only needed to be visually complete)
             flow        -  the computed flow
             steps       -  number of pixel in between rendered flow arrows
-            dots        -  position of does to be drawn
-            dothist     -  old dots, so I can draw blue tails
+            dots        -  position of dots to be first moved, then drawn
+            dothist     -  old dots, so I can draw blue tails (list (time) of list (points) of (x,y) typles (positions))
             polygones   -  used to draw cell outlines
             show_flow_vectors - False: turn of rendering of grid spaced flow vectors (see 'steps')
         '''
@@ -581,13 +581,14 @@ class Data3d:
         for polygone in polygones:
             cv2.polylines(vis, np.array([polygone], 'int32'), 1, (208,224,64), 2)
 
-        intdots = []
-        for i, dot in enumerate(dots):
+        newdots = []
+        for dot_idx, dot in enumerate(dots):
             # compute new dot
             try:
-                fx,fy = flow[dot[1],dot[0]].T
+                fx,fy = flow[int(dot[1]),int(dot[0])].T
             except:
-                continue #drop points that leave the image
+                fx = 0
+                fy = 0
             newx = max(0,dot[0]+fx)
             newy = max(0,dot[1]+fy)
             newx = min(im.shape[1]-1,newx)
@@ -596,26 +597,23 @@ class Data3d:
 
             # history lines
             color = (255,128,128)
-            for j,histdots in enumerate(dothist):
-                histdot = histdots[i]
-                p1 = ( int(histdot[0]), int(histdot[1]) )
-                if len(dothist) > j+1:
-                    histdot2 = dothist[j+1][i]
-                else:
-                    histdot2 = newdot
-                p2 = ( int(histdot2[0]), int(histdot2[1]) )
+            intdot = ( int(newdot[0]), int(newdot[1]) )
+            p1 = intdot
+            for time_idx,histdots in enumerate(dothist):
+                hdot = histdots[dot_idx]
+                p2 = ( int(hdot[0]), int(hdot[1]) )
                 cv2.line(vis, p1, p2, color, 1)
                 color = tuple(np.array(color)-[10,10,10])
                 if min(color) < 0: 
                     break
+                p1 = p2
 
-            # point
-            intdot = ( int(newdot[0]), int(newdot[1]) )
+            # point (after to draw on top of history lines etc)
             cv2.circle(vis,intdot, 3, (0,165,255), 1)
 
-            intdots.append(intdot)
+            newdots.append(newdot)
 
-        return vis, np.array(intdots)
+        return vis, np.array(newdots)
 
     def draw_segmentation(self, im, show_centers=True, dont_use_2dt=False, folder=None, inline=False):
         '''
