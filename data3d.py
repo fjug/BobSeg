@@ -258,6 +258,9 @@ class Data3d:
         assert flowchannel.shape[0] == segchannel.shape[0]
         
         show_inline = inline
+        nihilation_radius = 15 # how big is the center area that kills fiducials
+        do_respawn = False     # should killed fiducials respawn?
+        respawn_margin = 20    # how many pixels from the cell outline should a killed fiucial respawn?
         
         self.flows = [None]*len(self.images)
         
@@ -272,9 +275,9 @@ class Data3d:
         hsv[...,1] = 255
 
         # collect the fiducial dots
-        dots = self.get_radialdots_in(0,0,10,30) # self.get_griddots_in(0,0,spacing=15)
-        for oid in range(1,len(self.object_names)):
-            dots.extend( self.get_radialdots_in(0,oid,10,30) ) # self.get_griddots_in(0,oid,spacing=15) )
+        dots = []
+        for oid in range(0,len(self.object_names)):
+            dots.extend( self.get_radialdots_in(0,oid,2,respawn_margin) ) # self.get_griddots_in(0,oid,spacing=15) )
             
         dot_history = [dots]
         for f in range(flowchannel.shape[0]):
@@ -298,14 +301,38 @@ class Data3d:
                 else:
                     cells.append( self.get_result_polygone_2dt(oid,f) )
 
+            centers = []
+            for oid in range(0, len(self.object_names)):
+                centers.append( self.object_seedpoints[oid][f])
+
             outframe, dots = self.draw_flow(flowchannel[f],
                                        segchannel[f],
                                        flow,
                                        dots=dots,
                                        dothist=dot_history,
                                        polygones=cells,
-                                       show_flow_vectors=False)
+                                       show_flow_vectors=False,
+                                       centers=centers,
+                                       nihilation_radius=nihilation_radius)
             dot_history.insert(0,dots)
+
+            # TESTCODE - DOT REPLACEMENT
+            potentialnewdots = []
+            for oid in range(0, len(self.object_names)):
+                potentialnewdots.extend( self.get_radialdots_in(f, oid, 2, respawn_margin) )
+            for dot_index, dot in enumerate(dots):
+                for oid in range(0, len(self.object_names)):
+                    if np.linalg.norm( self.object_seedpoints[oid][f] - dot ) < nihilation_radius:
+                        if do_respawn:
+                            dots[dot_index] = potentialnewdots[dot_index]
+                        else:
+                            dots[dot_index] = (-1,-1)
+                        for dh in dot_history:
+                            if do_respawn:
+                                dh[dot_index] = potentialnewdots[dot_index]
+                            else:
+                                dh[dot_index] = (-1,-1)
+
 
             rgbframe = cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB)
 
@@ -504,7 +531,7 @@ class Data3d:
         Note that these points will only be placed if they where not shooting over the center.
             frame            - guess
             oid              - object id
-            spacing=5        - currently not working, idea would be that every k pixels a dot could be places
+            spacing=5        - how many col-vectors to jump (5 === 20% of radial dots will be created)
             pixels_inwards=5 - how many pixels parallel (and inwards) from polygon will markers be placed?
         '''
         points=[]
@@ -514,7 +541,7 @@ class Data3d:
         
         cx = netsurf.center[0]
         cy = netsurf.center[1]
-        for i in range( len(netsurf.col_vectors) ):
+        for i in range( 0, len(netsurf.col_vectors), spacing ):
             x = polypoints[i,0]
             y = polypoints[i,1]
             dx = netsurf.col_vectors[i][0]
@@ -545,7 +572,7 @@ class Data3d:
         return points
     
     def draw_flow(self, im, im2, flow, 
-                  step=16, dots=[], dothist=[], polygones=[], show_flow_vectors=True):
+                  step=16, dots=[], dothist=[], polygones=[], show_flow_vectors=True, centers=[], nihilation_radius=10):
         '''
         Renders an entire frame for flow movies. Lots of data needed here:
             im          -  flowchannel image for this frame
@@ -581,8 +608,16 @@ class Data3d:
         for polygone in polygones:
             cv2.polylines(vis, np.array([polygone], 'int32'), 1, (208,224,64), 2)
 
+        # draw fiducial nihilation zone
+        for (x,y) in centers:
+            cv2.circle(vis, (int(x),int(y)), int(nihilation_radius), (208,224,128), 2)
+
         newdots = []
         for dot_idx, dot in enumerate(dots):
+            # only show the dots that are 'alive' (dead ones are (-1,-1))
+            if dot[0] == -1:
+                continue
+
             # compute new dot
             try:
                 fx,fy = flow[int(dot[1]),int(dot[0])].T
@@ -602,7 +637,8 @@ class Data3d:
             for time_idx,histdots in enumerate(dothist):
                 hdot = histdots[dot_idx]
                 p2 = ( int(hdot[0]), int(hdot[1]) )
-                cv2.line(vis, p1, p2, color, 1)
+                if p1[0] != -1 and p2[0] != -1: # don't show trail to 'dead' fiducials
+                    cv2.line(vis, p1, p2, color, 1)
                 color = tuple(np.array(color)-[10,10,10])
                 if min(color) < 0: 
                     break
