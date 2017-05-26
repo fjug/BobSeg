@@ -13,32 +13,41 @@ import bresenham as bham
 class KymoSpider:
     """
     Implements Kymographs to visualize myesin and membrane flows
-    """    
+    """
+
+    angles = None
+    num_legs = None
+    center = None
+    length = None
+    kymographs = None
+    kymo_myosin = None
+    kymo_seg = None
+    kymo_flows = None
+    kymo_membrane = None
+    kymo_fiducials = None
     
-    def __init__( self, num_legs=8, length=100, center=(100,100), rotation=0 ):
+    def __init__( self, length=100, center=(100,100), rotation=0 ):
         '''
         CONSTRUCTION
-        num_leg     - the numbe of kymograph lines that spead aout aound the center
         length      - the length of the legs in pixels
         center      - (x,y)-tuple indicating the spider's center
         rotation    - rotation of the spieder (in degrees, counter-clockwise)
-        '''        
-        self.num_legs = num_legs
-        self.spider_rotation = rotation
-        
-        self.ea_ep_leg_index = 0    # index of the leg between Ea and Ep cell (-1 means unknown/unused)
-        self.center = center        # the center point of the current spider
-        self.set_leg_length(length) # the length of each spider leg
-    
-        self.kymographs = [None]*num_legs   # the computed Kymographs for the membrane channel
-        self.kymo_myosin = [None]*num_legs  # the computed Kymographs for the myosin channel
-        self.kymo_seg = [None]*num_legs     # the computed Kymographs for the segmentation channel
-        self.kymo_flows = [None]*num_legs   # the computed flow Kymographs for the flow
+        '''
+        self.num_legs = 8
 
-        self.membrane = [None]*num_legs   # the position of the membrane for each spider leg
-        self.fiducials = [None]*num_legs  # the position of fiducials along spider legs
+        self.center = center  # the center point of the current spider
+        self.set_leg_length(length)  # the length of each spider leg
 
-        
+        self.kymographs = [None] * self.num_legs  # the computed Kymographs for the membrane channel
+        self.kymo_myosin = [None] * self.num_legs  # the computed Kymographs for the myosin channel
+        self.kymo_seg = [None] * self.num_legs  # the computed Kymographs for the segmentation channel
+        self.kymo_flows = [None] * self.num_legs  # the computed flow Kymographs for the flow
+
+        self.membrane = [None] * self.num_legs  # the position of the membrane for each spider leg
+        self.fiducials = [None] * self.num_legs  # the position of fiducials along spider legs
+
+        self.set_leg_number(self.num_legs, rotation=rotation)
+
     def get_projected_length(self, vector, vec2project):
         '''
         Projects one vector onto another and returns the projected length.
@@ -72,10 +81,12 @@ class KymoSpider:
         Returns a list of positions and a list of reset points (where fiducial moved out at bottom and a new one was created)
         '''
         pos = init_positions[0]
+        print init_positions
         positions = [pos]
         resets = []
         for col in range(1,len(flow_kymo[0])): # 1 because flow at t==0 is blank
-            pos += flow_kymo[int(round(pos)),col]
+            print pos
+            pos += flow_kymo[col, int(round(pos))]
             if pos>=len(flow_kymo)-1:
                 pos = init_positions[col]
                 resets.append((col,pos))
@@ -116,13 +127,6 @@ class KymoSpider:
 
         return minimum, avg, maximum, std, start_idx, resets
     
-    def set_ea_ep_leg(self, index):
-        '''
-        DEPRECATED: Sets the index of the lag that points toward the Ea/Ep cell boundary (-1 means undefined)
-        Note: index is 1-based to match the numbers in the overview plot.
-        '''
-        self.ea_ep_leg_index = index-1
-    
     def set_center(self, x, y):
         '''
         Sets the center for the kymograph spider. (Given in pixels.)
@@ -145,7 +149,26 @@ class KymoSpider:
         assert(self.center[1]>=length) # spider not allowed to stick out of image
 
         self.length = length
-        
+
+    def set_leg_number(self, num_legs, rotation=0):
+        '''
+        :param num_legs: sets the given number of legs and distributes them uniformly around the center 
+        :return: 
+        '''
+        self.num_legs = num_legs
+
+        angles = np.arange(rotation, rotation + 360, 360.0 / self.num_legs)
+        angles %= 360
+        angles = np.rint(angles)
+        self.set_leg_angles(angles)
+
+    def set_leg_angles(self, leg_angles):
+        '''
+        leg_angles  - list of angles (in degrees) into which the  kymograph lines should point
+        '''
+        self.angles = leg_angles
+        self.num_legs = len(self.angles)
+
     def get_leg_length(self):
         '''
         Returns the set leg length.
@@ -164,9 +187,11 @@ class KymoSpider:
         '''
         Returns a list if two (x,y)-coordinate tuples defining the start and endpoint of the desired spiderleg.
         '''
-        rad_rot=(self.spider_rotation/360.0)*math.pi*2
-        dx = int( math.sin(rad_rot+math.pi*2*legnum/self.num_legs)*self.length )
-        dy = int( math.cos(rad_rot+math.pi*2*legnum/self.num_legs)*self.length )
+        assert legnum < len(self.angles)
+
+        rad_rot=(self.angles[legnum]/360.0)*math.pi*2
+        dx = int( math.sin(rad_rot)*self.length )
+        dy = int( math.cos(rad_rot)*self.length )
         x = self.center[0]+dx
         y = self.center[1]+dy
         return [self.center, (x,y)]
@@ -273,7 +298,7 @@ class KymoSpider:
 
         for legnum in range(self.num_legs):
             [p1,p2] = self.get_leg_line(legnum)
-            if legnum == self.ea_ep_leg_index:
+            if legnum == 0:
                 ax.plot([p2[0],p1[0]],[p2[1],p1[1]],'y-',lw=2)
                 ax.text(p2[0],p2[1],str(legnum+1),font1)
             else:
@@ -300,7 +325,7 @@ class KymoSpider:
         self.plot_spider_on_axis(ax)
 
         for legnum in range(self.num_legs):
-            if legnum == self.ea_ep_leg_index:
+            if legnum == 0:
                 style = 'y.'
                 style_reset = 'c*'
             else:
@@ -360,7 +385,7 @@ class KymoSpider:
         fig.suptitle('Flow Stats', fontsize=16)
         
         for legnum in range(self.num_legs):
-            if legnum == self.ea_ep_leg_index:
+            if legnum == 0:
                 style = 'y.'
             else:
                 style = 'c.'
@@ -429,7 +454,7 @@ class KymoSpider:
         slippages = []
         smoothed_slippages = []
         for legnum in range(self.num_legs):
-            if legnum == self.ea_ep_leg_index:
+            if legnum == 0:
                 style = 'y-'
                 style_reset = 'C*'
             else:
