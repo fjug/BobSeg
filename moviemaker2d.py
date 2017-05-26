@@ -4,6 +4,8 @@ import numpy as np
 import pylab
 from matplotlib.path import Path
 
+from fiducials import Fiducials2d
+
 
 class MovieMaker2d:
     """
@@ -36,6 +38,8 @@ class MovieMaker2d:
         assert ch0.shape[0] == ch1.shape[0]
         assert ch1.shape[0] == len(data3d.flows)
 
+        fiducials = Fiducials2d()
+
         if inline:
             from IPython.display import clear_output
             pylab.rcParams['figure.figsize'] = (25, 10)
@@ -46,11 +50,10 @@ class MovieMaker2d:
         hsv[..., 1] = 255
 
         # collect the fiducial dots
-        dots = []
+        f_ids = []
         for oid in range(0, len(data3d.object_names)):
-            dots.extend(self.get_radialdots_in( data3d, 0, oid, 7, self.respawn_margin))  # self.get_griddots_in( data3d, 0,oid,spacing=15) )
+            f_ids.extend( fiducials.add_fiducials(self.get_radialdots_in( data3d, 0, oid, 2, self.respawn_margin)) )  # self.get_griddots_in( data3d, 0,oid,spacing=15) ))
 
-        dot_history = [dots]
         for f in range(ch0.shape[0]):
             cells = []
             for oid in range(len(data3d.object_names)):
@@ -63,33 +66,25 @@ class MovieMaker2d:
             for oid in range(0, len(data3d.object_names)):
                 centers.append(data3d.object_seedpoints[oid][f])
 
-            outframe, dots = self.draw_flow(ch1[f],
-                                            ch0[f],
-                                            data3d.flows[f],
-                                            dots=dots,
-                                            dothist=dot_history,
-                                            polygones=cells,
-                                            show_flow_vectors=False,
-                                            centers=centers,
-                                            nihilation_radius=self.nihilation_radius)
-            dot_history.insert(0, dots)
+            outframe = self.draw_flow(ch1[f],
+                                      ch0[f],
+                                      data3d.flows[f],
+                                      fiducials=fiducials,
+                                      polygones=cells,
+                                      show_flow_vectors=False,
+                                      centers=centers,
+                                      nihilation_radius=self.nihilation_radius)
 
-            # TESTCODE - DOT REPLACEMENT
+            # Fiducial removal or reset
             potentialnewdots = []
             for oid in range(0, len(data3d.object_names)):
                 potentialnewdots.extend(self.get_radialdots_in( data3d, f, oid, 2, self.respawn_margin))
-            for dot_index, dot in enumerate(dots):
+            for f_id in fiducials.get_ids():
                 for oid in range(0, len(data3d.object_names)):
-                    if np.linalg.norm(data3d.object_seedpoints[oid][f] - dot) < self.nihilation_radius:
+                    if np.linalg.norm(data3d.object_seedpoints[oid][f] - fiducials.get(f_id)) < self.nihilation_radius:
+                        fiducials.remove_fiducial(f_id)
                         if self.do_respawn:
-                            dots[dot_index] = potentialnewdots[dot_index]
-                        else:
-                            dots[dot_index] = (-1, -1)
-                        for dh in dot_history:
-                            if self.do_respawn:
-                                dh[dot_index] = potentialnewdots[dot_index]
-                            else:
-                                dh[dot_index] = (-1, -1)
+                            fiducials.reset( f_id, potentialnewdots[f_id] )
 
             rgbframe = cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB)
 
@@ -116,15 +111,14 @@ class MovieMaker2d:
             cv2.destroyAllWindows()
 
     def draw_flow(self, im, im2, flow,
-                  step=16, dots=[], dothist=[], polygones=[], show_flow_vectors=True, centers=[], nihilation_radius=10):
+                  step=16, fiducials=None, polygones=[], show_flow_vectors=True, centers=[], nihilation_radius=10):
         '''
         Renders an entire frame for flow movies. Lots of data needed here:
             im          -  flowchannel image for this frame
             im2         -  segchannel image for this frame (only needed to be visually complete)
             flow        -  the computed flow
             steps       -  number of pixel in between rendered flow arrows
-            dots        -  position of dots to be first moved, then drawn
-            dothist     -  old dots, so I can draw blue tails (list (time) of list (points) of (x,y) typles (positions))
+            fiducials   -  instance of Fiducials2d or None
             polygones   -  used to draw cell outlines
             show_flow_vectors - False: turn of rendering of grid spaced flow vectors (see 'steps')
         '''
@@ -156,44 +150,36 @@ class MovieMaker2d:
         for (x, y) in centers:
             cv2.circle(vis, (int(x), int(y)), int(nihilation_radius), (148, 155, 85), 1)
 
-        newdots = []
-        for dot_idx, dot in enumerate(dots):
-            # only show the dots that are 'alive' (dead ones are (-1,-1))
-            if dot[0] == -1:
-                continue
+        for f_id in fiducials.get_ids():
+            # compute new position
+            pos = fiducials.get(f_id)
+            fx, fy = flow[int(pos[1]), int(pos[0])].T
 
-            # compute new dot
-            try:
-                fx, fy = flow[int(dot[1]), int(dot[0])].T
-            except:
-                fx = 0
-                fy = 0
-            newx = max(0, dot[0] + fx)
-            newy = max(0, dot[1] + fy)
+            newx = max(0, pos[0] + fx)
+            newy = max(0, pos[1] + fy)
             newx = min(im.shape[1] - 1, newx)
             newy = min(im.shape[0] - 1, newy)
-            newdot = (newx, newy)
 
-            # history lines
+            fiducials.move(f_id, (newx, newy) )
+
+            # draw history lines
             color = (255, 128, 128)
-            intdot = (int(newdot[0]), int(newdot[1]))
-            p1 = intdot
-            for time_idx, histdots in enumerate(dothist):
-                hdot = histdots[dot_idx]
-                p2 = (int(hdot[0]), int(hdot[1]))
-                if p1[0] != -1 and p2[0] != -1:  # don't show trail to 'dead' fiducials
-                    cv2.line(vis, p1, p2, color, 1)
+            history = fiducials.get_history(f_id)
+            fr = fiducials.get(f_id)
+            for hidx in range(len(history)):
+                to = history[hidx]
+                p1 = (int(fr[0]), int(fr[1]))
+                p2 = (int(to[0]), int(to[1]))
+                cv2.line(vis, p1, p2, color, 1)
                 color = tuple(np.array(color) - [10, 10, 10])
                 if min(color) < 0:
                     break
-                p1 = p2
+                fr = to
 
-            # point (after to draw on top of history lines etc)
-            cv2.circle(vis, intdot, 3, (0, 165, 255), 1)
+            # draw point (after to draw on top of history lines etc)
+            cv2.circle(vis, (int(newx), int(newy)), 3, (0, 165, 255), 1)
 
-            newdots.append(newdot)
-
-        return vis, np.array(newdots)
+        return vis
 
     def draw_segmentation(self, data3d, im, show_centers=True, dont_use_2dt=False, folder=None, inline=False):
         '''
