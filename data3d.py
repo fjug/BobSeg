@@ -1,21 +1,17 @@
-import numpy as np
-import bresenham as bham
-import maxflow
-import math
-from tifffile import imread, imsave
 import cPickle as pickle
-import cv2
 
+import cv2
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Ellipse
+from matplotlib.patches import Polygon
+
+import bresenham as bham
 from netsurface2d import NetSurf2d
 from netsurface2dt import NetSurf2dt
 
-import matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
-from matplotlib.patches import Ellipse
-from matplotlib.collections import PatchCollection
-from matplotlib.path import Path
-import pylab
 
 class Data3d:
     """
@@ -241,45 +237,13 @@ class Data3d:
     # *** FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW ***  FLOW *** 
     # ********************************************************************************************
     
-    def compute_flow( self, flowchannel, segchannel, folder=None, show=False, inline=False ):
-        '''
-        Computes and optionally displays flow and segmentation.
-        Parameters:
-            flowchannel   -  the images (t,y,x) the flow should be computed on
-            segchannel    -  the images (t,y,x) used for segmentation (might coincide with self.images
-                             but are not a list of 2d images but an 3d image stack.
-                             Note: segchannel is here ONLY used for visualization purposes!!!
-            folder        -  If not 'None' this folder will be used to store all visualized frames.
-            show          -  Rendered frames will be shown on screen or inline if set to 'True'
-            inline        -  False: openCV window will be used to display rendering
-                             True: matplotlib is used (can be used in jupyter inline mode!)
-        '''
+    def compute_flow( self, flowchannel ):
         assert flowchannel.shape[0] == len(self.images)
-        assert flowchannel.shape[0] == segchannel.shape[0]
-        
-        show_inline = inline
-        
-        self.flows = [None]*len(self.images)
-        
-        if show_inline:
-            from IPython.display import clear_output
-            pylab.rcParams['figure.figsize'] = (25, 10)
-            fig = plt.figure()
 
+        self.flows = [None] * len(self.images)
         prvs = flowchannel[0]
-        hsv_shape = (prvs.shape[0],prvs.shape[1],3)
-        hsv = np.zeros(hsv_shape)
-        hsv[...,1] = 255
-
-        # collect the fiducial dots
-        dots = self.get_radialdots_in(0,0,10,30) # self.get_griddots_in(0,0,spacing=15)
-        for oid in range(1,len(self.object_names)):
-            dots.extend( self.get_radialdots_in(0,oid,10,30) ) # self.get_griddots_in(0,oid,spacing=15) )
-            
-        dot_history = [dots]
         for f in range(flowchannel.shape[0]):
             nxt = flowchannel[f]
-
             flow = cv2.calcOpticalFlowFarneback(prev=prvs,
                                                 next=nxt,
                                                 pyr_scale=0.5,
@@ -289,50 +253,12 @@ class Data3d:
                                                 poly_n=5,
                                                 poly_sigma=1.5,
                                                 flags=1)
-            self.flows[f]=flow
-
-            cells = []
-            for oid in range(len(self.object_names)):
-                if self.netsurf2dt is None:
-                    cells.append( self.get_result_polygone(oid,f) )
-                else:
-                    cells.append( self.get_result_polygone_2dt(oid,f) )
-
-            outframe, dots = self.draw_flow(flowchannel[f],
-                                       segchannel[f],
-                                       flow,
-                                       dots=dots,
-                                       dothist=dot_history,
-                                       polygones=cells,
-                                       show_flow_vectors=False)
-            dot_history.insert(0,dots)
-
-            rgbframe = cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB)
-
-            # save frames if desired
-            if not folder is None:
-                cv2.imwrite(folder+'frame%04d.png'%(f), outframe)
-
-            if show_inline:
-                pylab.axis('off')
-                pylab.title("flow")
-                pylab.imshow(rgbframe)
-                pylab.show()
-                clear_output(wait=True)
-                # optional quick exit (DEBUGGING)
-                if False and f==3:
-                    break
-            else:
-                cv2.imshow('flow',outframe)
-                k = cv2.waitKey(25) & 0xff
-                if k == 27: # ESC
-                    break
-
+            self.flows[f] = flow
             prvs = nxt
+            print '.',
+        print ' ...done!'
+        return self.flows
 
-        if not show_inline:
-            cv2.destroyAllWindows()
-    
     # ***************************************************************************************
     # *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD ***
     # ***************************************************************************************
@@ -448,14 +374,14 @@ class Data3d:
             min_radius = self.object_min_surf_dist[oid][frame]
             max_radius = self.object_max_surf_dist[oid][frame]
             
-            ax.scatter(center[0],center[1], c='y', marker='o')
+            # ax.scatter(center[0],center[1], c='y', marker='x')
             patches.append( Ellipse((center[0],center[1]),
-                                    width=min_radius[0],
-                                    height=min_radius[1]) )
+                                    width=(min_radius[0]*2),
+                                    height=(min_radius[1])*2) )
             patches.append( Ellipse((center[0],center[1]),
-                                    width=max_radius[0],
-                                    height=max_radius[1]) )
-            p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
+                                    width=(max_radius[0]*2),
+                                    height=(max_radius[1]*2)) )
+            p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.3, color='yellow')
             ax.add_collection(p)
 
     def plot_result( self, frame, ax ):
@@ -498,217 +424,6 @@ class Data3d:
             p = PatchCollection(patches, cmap=matplotlib.cm.jet, alpha=0.4, color='green')
             ax.add_collection(p)
 
-    def get_radialdots_in( self, frame, oid, spacing=5, pixels_inwards=5 ):
-        '''
-        Returns list of (x,y) coordinates placed at given distance inside a segmented polygon.
-        Note that these points will only be placed if they where not shooting over the center.
-            frame            - guess
-            oid              - object id
-            spacing=5        - currently not working, idea would be that every k pixels a dot could be places
-            pixels_inwards=5 - how many pixels parallel (and inwards) from polygon will markers be placed?
-        '''
-        points=[]
-        
-        netsurf = self.netsurfs[oid][frame]
-        polypoints = np.array( self.get_result_polygone(oid,frame) )
-        
-        cx = netsurf.center[0]
-        cy = netsurf.center[1]
-        for i in range( len(netsurf.col_vectors) ):
-            x = polypoints[i,0]
-            y = polypoints[i,1]
-            dx = netsurf.col_vectors[i][0]
-            dy = netsurf.col_vectors[i][1]
-            x_new = int(x - dx * pixels_inwards)
-            y_new = int(y - dy * pixels_inwards)
-            # only if not shooting over center, add point!
-            if np.sign(x-cx) - np.sign(x_new-cx) == 0:
-                points.append((x_new, y_new))
-                
-        return points
-    
-    def get_griddots_in( self, frame, oid, spacing=5 ):
-        points=[]
-        
-        polypoints = np.array( self.get_result_polygone(oid,frame) )
-        poly = Path( polypoints, closed=True )
-        
-        minx = np.min(polypoints[:,0])
-        maxx = np.max(polypoints[:,0])
-        miny = np.min(polypoints[:,1])
-        maxy = np.max(polypoints[:,1])
-        for x in range(minx,maxx,spacing):
-            for y in range(miny,maxy,spacing):
-                if poly.contains_point((x,y)):
-                    points.append((x,y))
-                    
-        return points
-    
-    def draw_flow(self, im, im2, flow, 
-                  step=16, dots=[], dothist=[], polygones=[], show_flow_vectors=True):
-        '''
-        Renders an entire frame for flow movies. Lots of data needed here:
-            im          -  flowchannel image for this frame
-            im2         -  segchannel image for this frame (only needed to be visually complete)
-            flow        -  the computed flow
-            steps       -  number of pixel in between rendered flow arrows
-            dots        -  position of does to be drawn
-            dothist     -  old dots, so I can draw blue tails
-            polygones   -  used to draw cell outlines
-            show_flow_vectors - False: turn of rendering of grid spaced flow vectors (see 'steps')
-        '''
-        h,w = im.shape[:2]
-        y,x = np.mgrid[step/2:h:step,step/2:w:step].reshape(2,-1)
-        fx,fy = flow[y,x].T
-
-        # create image and draw
-        vis = cv2.cvtColor(np.uint8(np.zeros_like(im)),cv2.COLOR_GRAY2BGR)
-        im = im-np.min(im)
-        im2 = im2-np.min(im2)
-        vis[:,:,1] = (255*im)/np.max(im)
-        vis[:,:,2] = (255*im2)/np.max(im2)
-
-        # flow arrows
-        if ( show_flow_vectors ):
-            lines = vstack([x,y,x+fx,y+fy]).T.reshape(-1,2,2)
-            lines = int32(lines)
-
-            for (x1,y1),(x2,y2) in lines:
-                cv2.line(vis,(x1,y1),(x2,y2),(0,150,150),1)
-                cv2.circle(vis,(x1,y1),1,(0,150,150), -1)
-
-        # draw polygones
-        for polygone in polygones:
-            cv2.polylines(vis, np.array([polygone], 'int32'), 1, (208,224,64), 2)
-
-        intdots = []
-        for i, dot in enumerate(dots):
-            # compute new dot
-            try:
-                fx,fy = flow[dot[1],dot[0]].T
-            except:
-                continue #drop points that leave the image
-            newx = max(0,dot[0]+fx)
-            newy = max(0,dot[1]+fy)
-            newx = min(im.shape[1]-1,newx)
-            newy = min(im.shape[0]-1,newy)
-            newdot = ( newx, newy )
-
-            # history lines
-            color = (255,128,128)
-            for j,histdots in enumerate(dothist):
-                histdot = histdots[i]
-                p1 = ( int(histdot[0]), int(histdot[1]) )
-                if len(dothist) > j+1:
-                    histdot2 = dothist[j+1][i]
-                else:
-                    histdot2 = newdot
-                p2 = ( int(histdot2[0]), int(histdot2[1]) )
-                cv2.line(vis, p1, p2, color, 1)
-                color = tuple(np.array(color)-[10,10,10])
-                if min(color) < 0: 
-                    break
-
-            # point
-            intdot = ( int(newdot[0]), int(newdot[1]) )
-            cv2.circle(vis,intdot, 3, (0,165,255), 1)
-
-            intdots.append(intdot)
-
-        return vis, np.array(intdots)
-
-    def draw_segmentation(self, im, show_centers=True, dont_use_2dt=False, folder=None, inline=False):
-        '''
-        Draws movie frames for segmented objects with/without center points being visible.
-            im            -  the (raw?) image data to be rendered in the background
-            show_centers  -  also center points will be draws (if True)
-            dont_use_2dt  -  uses available 2dt data (if True; 2d data otherwise)
-            folder        -  the folder to store the images in
-            inline        -  if True it will show results within jupyter, otherwise in cv2 frame
-        This method will return (frames, centers, polygones, radii), which is
-            - a list of images (the frames of the created movie).
-            - a list of (x,y)-tuples giving the found center points
-            - a list of a list of polygones per frame (each polygone again given by a list of (x,y)-points)
-            - a list of radii that denote the best fitting cirlcle (centered at the corresponding center point)
-        '''
-        frames = []
-        centers = []
-        radii = []
-        all_polygones = []
-        
-        if inline:
-            from IPython.display import clear_output
-            pylab.rcParams['figure.figsize'] = (25, 10)
-            fig = plt.figure()
-
-        for f in range(len(im)):
-            # create image for a single frame and draw
-            vis = cv2.cvtColor(np.zeros_like(im[f]),cv2.COLOR_GRAY2BGR)
-            vis[:,:,0] = 255.0*im[f]/np.max(im[f])
-            vis[:,:,1] = 255.0*im[f]/np.max(im[f])
-            vis[:,:,2] = 255.0*im[f]/np.max(im[f])
-            
-            # show center dot
-            if show_centers:
-                for oid in range(len(self.object_names)):
-                    color = int(128+128./len(self.object_names)*(oid+1))
-                    for f2 in range(f+1):
-                        center = tuple(self.object_seedpoints[oid][f2])
-                        cv2.circle(vis, center, 3, (0,color,0), 1)
-                        centers.append(center)
-            
-                    # show best fitting circle
-                    r = 0.
-                    for i in range( self.num_columns ):
-                        r += self.netsurf2dt[oid].get_surface_index(f,i)
-                    r /= self.num_columns
-                    r /= self.K
-                    r *= self.object_max_surf_dist[oid][f][0]-self.object_min_surf_dist[oid][f][0]
-                    r += self.object_min_surf_dist[oid][f][0]
-                    radii.append(r)
-
-                    cv2.circle(vis,tuple(self.object_seedpoints[oid][f2]), int(r), (0,color,0), 1)
-            
-            # retrieve polygones
-            polygones = []
-            for oid in range(len(self.object_names)):
-                if self.netsurf2dt is None or dont_use_2dt:
-                    polygones.append( self.get_result_polygone(oid,f) )
-                else:
-                    polygones.append( self.get_result_polygone_2dt(oid,f) )
-            all_polygones.append(polygones)
-                    
-            # draw polygones
-            for polygone in polygones:
-                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,0,0), 2)
-
-            rgbframe = cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
-            frames.append(rgbframe)
-
-            # save frames if desired
-            if not folder is None:
-                cv2.imwrite(folder+'frame%4d.png'%(f), vis)
-
-            if inline:
-                pylab.axis('off')
-                pylab.title("segmentation")
-                pylab.imshow(rgbframe)
-                pylab.show()
-                clear_output(wait=True)
-                # optional quick exit (DEBUGGING)
-                if False and f==3:
-                    break
-            else:
-                cv2.imshow('segmentation',vis)
-                k = cv2.waitKey(25) & 0xff
-                if k == 27: # ESC
-                    break
-
-        if not inline:
-            cv2.destroyAllWindows()
-            
-        return frames, centers, all_polygones, radii
-    
     def create_segmentation_image(self, dont_use_2dt=False):
         segimgs = np.zeros_like(self.images)
         for f in range(len(self.images)):

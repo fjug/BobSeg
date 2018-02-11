@@ -13,32 +13,41 @@ import bresenham as bham
 class KymoSpider:
     """
     Implements Kymographs to visualize myesin and membrane flows
-    """    
+    """
+
+    angles = None
+    num_legs = None
+    center = None
+    length = None
+    kymographs = None
+    kymo_myosin = None
+    kymo_seg = None
+    kymo_flows = None
+    kymo_membrane = None
+    kymo_fiducials = None
     
-    def __init__( self, num_legs=8, length=100, center=(100,100), rotation=0 ):
+    def __init__( self, length=100, center=(100,100), rotation=0 ):
         '''
         CONSTRUCTION
-        num_leg     - the numbe of kymograph lines that spead aout aound the center
         length      - the length of the legs in pixels
         center      - (x,y)-tuple indicating the spider's center
         rotation    - rotation of the spieder (in degrees, counter-clockwise)
-        '''        
-        self.num_legs = num_legs
-        self.spider_rotation = rotation
-        
-        self.ea_ep_leg_index = 0    # index of the leg between Ea and Ep cell (-1 means unknown/unused)
-        self.center = center        # the center point of the current spider
-        self.set_leg_length(length) # the length of each spider leg
-    
-        self.kymographs = [None]*num_legs   # the computed Kymographs for the membrane channel
-        self.kymo_myosin = [None]*num_legs  # the computed Kymographs for the myosin channel
-        self.kymo_seg = [None]*num_legs     # the computed Kymographs for the segmentation channel
-        self.kymo_flows = [None]*num_legs   # the computed flow Kymographs for the flow
+        '''
+        self.num_legs = 8
 
-        self.membrane = [None]*num_legs   # the position of the membrane for each spider leg
-        self.fiducials = [None]*num_legs  # the position of fiducials along spider legs
+        self.center = center  # the center point of the current spider
+        self.set_leg_length(length)  # the length of each spider leg
 
-        
+        self.kymographs = [None] * self.num_legs  # the computed Kymographs for the membrane channel
+        self.kymo_myosin = [None] * self.num_legs  # the computed Kymographs for the myosin channel
+        self.kymo_seg = [None] * self.num_legs  # the computed Kymographs for the segmentation channel
+        self.kymo_flows = [None] * self.num_legs  # the computed flow Kymographs for the flow
+
+        self.membrane = [None] * self.num_legs  # the position of the membrane for each spider leg
+        self.fiducials = [None] * self.num_legs  # the position of fiducials along spider legs
+
+        self.set_leg_number(self.num_legs, rotation=rotation)
+
     def get_projected_length(self, vector, vec2project):
         '''
         Projects one vector onto another and returns the projected length.
@@ -72,22 +81,51 @@ class KymoSpider:
         Returns a list of positions and a list of reset points (where fiducial moved out at bottom and a new one was created)
         '''
         pos = init_positions[0]
+        print init_positions
         positions = [pos]
         resets = []
-        for col in range(1,flow_kymo.shape[1]): # 1 because flow at t==0 is blank
-            pos += flow_kymo[int(round(pos)),col]
+        for col in range(1,len(flow_kymo[0])): # 1 because flow at t==0 is blank
+            print pos
+            pos += flow_kymo[col, int(round(pos))]
             if pos>=len(flow_kymo)-1:
                 pos = init_positions[col]
                 resets.append((col,pos))
             positions.append(pos)
         return positions, resets
     
-    def set_ea_ep_leg(self, index):
+    def get_flow_stats(self, flow_kymo, start_idx, length=None, move_window=False):
         '''
-        DEPRECATED: Sets the index of the lag that points toward the Ea/Ep cell boundary (-1 means undefined)
-        Note: index is 1-based to match the numbers in the overview plot.
+        Computes the min,max,average (projected) and standard deviation of values along the given flow_kymo.
+        t          -- time index in flow_kymo
+        start_idx  -- index at which to start averaging (its a row idex in flow_kymo)
+        length     -- number of pixels downwards from start_idx to take avg of
         '''
-        self.ea_ep_leg_index = index-1
+        avg = np.zeros(len(flow_kymo[0]))
+        minimum = np.zeros_like(avg)
+        maximum = np.zeros_like(avg)
+        std = np.zeros_like(avg)
+        resets = []
+        
+        for col in range(0,len(flow_kymo[0])):
+            if start_idx[col]<0:
+                start_idx[col] = 0
+            end_idx = len(flow_kymo)
+            if length is not None:
+                end_idx = int( min(end_idx, start_idx[col]+length) )
+            minimum[col] = np.min(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            maximum[col] = np.max(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            avg[col]     = np.average(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            std[col]     = np.std(flow_kymo.T[col,int(start_idx[col]):end_idx])
+            # if desired, move window around by the measured flow
+            if move_window and (col+1)<len(flow_kymo[0]):
+                nextpos = start_idx[col] + avg[col]
+                # respawn in case the window is pushed down so it would stick out at bottom
+                if (nextpos+length) < len(flow_kymo):
+                    start_idx[col+1] = nextpos
+                else:
+                    resets.append((col+1,start_idx[col+1]))
+
+        return minimum, avg, maximum, std, start_idx, resets
     
     def set_center(self, x, y):
         '''
@@ -111,7 +149,26 @@ class KymoSpider:
         assert(self.center[1]>=length) # spider not allowed to stick out of image
 
         self.length = length
-        
+
+    def set_leg_number(self, num_legs, rotation=0):
+        '''
+        :param num_legs: sets the given number of legs and distributes them uniformly around the center 
+        :return: 
+        '''
+        self.num_legs = num_legs
+
+        angles = np.arange(rotation, rotation + 360, 360.0 / self.num_legs)
+        angles %= 360
+        angles = np.rint(angles)
+        self.set_leg_angles(angles)
+
+    def set_leg_angles(self, leg_angles):
+        '''
+        leg_angles  - list of angles (in degrees) into which the  kymograph lines should point
+        '''
+        self.angles = leg_angles
+        self.num_legs = len(self.angles)
+
     def get_leg_length(self):
         '''
         Returns the set leg length.
@@ -130,9 +187,11 @@ class KymoSpider:
         '''
         Returns a list if two (x,y)-coordinate tuples defining the start and endpoint of the desired spiderleg.
         '''
-        rad_rot=(self.spider_rotation/360.0)*math.pi*2
-        dx = int( math.sin(rad_rot+math.pi*2*legnum/self.num_legs)*self.length )
-        dy = int( math.cos(rad_rot+math.pi*2*legnum/self.num_legs)*self.length )
+        assert legnum < len(self.angles)
+
+        rad_rot=(self.angles[legnum]/360.0)*math.pi*2
+        dx = int( math.sin(rad_rot)*self.length )
+        dy = int( math.cos(rad_rot)*self.length )
         x = self.center[0]+dx
         y = self.center[1]+dy
         return [self.center, (x,y)]
@@ -239,7 +298,7 @@ class KymoSpider:
 
         for legnum in range(self.num_legs):
             [p1,p2] = self.get_leg_line(legnum)
-            if legnum == self.ea_ep_leg_index:
+            if legnum == 0:
                 ax.plot([p2[0],p1[0]],[p2[1],p1[1]],'y-',lw=2)
                 ax.text(p2[0],p2[1],str(legnum+1),font1)
             else:
@@ -257,6 +316,7 @@ class KymoSpider:
         '''
         fig.suptitle('Kymograph Spider', fontsize=16)
         
+        # - - - PLOT OVERVIEWS - - - -
         ax = fig.add_subplot(2,self.num_legs+1,1)
         ax.imshow(frame_first)
         self.plot_spider_on_axis(ax)
@@ -265,7 +325,7 @@ class KymoSpider:
         self.plot_spider_on_axis(ax)
 
         for legnum in range(self.num_legs):
-            if legnum == self.ea_ep_leg_index:
+            if legnum == 0:
                 style = 'y.'
                 style_reset = 'c*'
             else:
@@ -273,28 +333,175 @@ class KymoSpider:
                 style_reset = 'y*'
 
             #from IPython.core.debugger import Tracer; Tracer()()
-            
-            init_positions = [pos_fiducial] * len(self.kymographs[0])
+                        
+            # compute all places where fiducials would be reinitiated IF they where to drop out at the bottom
+            init_positions = [pos_fiducial] * len(self.kymographs[0][0])
             if rel_to_membrane:
-                for i in range(len(self.kymographs[0])):
+                for i in range(len(self.kymographs[0][0])):
                     init_positions[i] += np.argmax(self.kymo_seg[legnum][:,i])
+                    
+            # make kymo_seg transparent (in order to be able to plot on top of another kymo)
+            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
 
+            # - - - start the plotting - - - -
+            
             ax = fig.add_subplot(2,self.num_legs+1,legnum+2)
             ax.imshow(self.kymographs[legnum], plt.get_cmap('gray'))
-            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
+            # - - - - 
             ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
+            # - - - -
             positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
             if (len(resets)>0):
                 ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
             ax.plot(positions, style)
             #ax.axis('off')
+            
+            # - - - -
             
             ax = fig.add_subplot(2,self.num_legs+1,self.num_legs+1+legnum+2)
             #ax.imshow(self.kymo_flows[legnum], plt.get_cmap('gray'))
             ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
+            # - - - -
             ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=300, alpha=.9)
+            # - - - -
             positions, resets = self.move_fiducial(self.kymo_flows[legnum],init_positions)
             if (len(resets)>0):
                 ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
             ax.plot(positions, style)
             #ax.axis('off')
+
+    def moving_average(self, a, n=3):
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        return ret[n - 1:] / n
+    
+    def plot_column_flow_stats(self, fig, offset_from_membrane=0, length=None):
+        '''
+        Plots the several statistics computed per column of the computed kymographs.
+        fig                   -  the figure object to plot into
+        offset_from_membrane  -  stats to be computed in a stripe below membrane starting that many pixels below
+        length                -  pixel height of stripe within which stats are computed (if None, stripe reaches until bottom)
+        '''
+        fig.suptitle('Flow Stats', fontsize=16)
+        
+        for legnum in range(self.num_legs):
+            if legnum == 0:
+                style = 'y.'
+            else:
+                style = 'c.'
+
+            # read the segmented membrane location out of kymo_seg
+            pos_membranes = np.zeros( len(self.kymographs[0][0]) )
+            for col in range( len(self.kymographs[0][0]) ):
+                pos_membranes[col] = np.argmax(self.kymo_seg[legnum][:,col])
+            
+            # get the average inward flow below the membrane
+            #print np.shape(pos_membranes), pos_membranes
+            minf, avgf, maxf, stdf, pos_intervals, resets = \
+                    self.get_flow_stats(self.kymo_flows[legnum],pos_membranes+offset_from_membrane,length)
+            
+            # make kymo_seg transparent (in order to be able to plot on top of another kymo)
+            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
+
+            # - - - start the plotting - - - -
+                                     
+            ax = fig.add_subplot(2,self.num_legs,legnum+1)
+            ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
+            ax.plot(pos_membranes+offset_from_membrane, style)
+            if length is None:
+                ax.plot(np.zeros_like(pos_membranes)+len(self.kymographs[0]), style)
+            else:
+                ax.plot(pos_membranes+offset_from_membrane+length, style)
+
+            ax = fig.add_subplot(2,self.num_legs,self.num_legs+legnum+1)
+            ax.set_ylim([-10,10])
+            ax.plot(minf, color='gray')
+            ax.plot(maxf, color='grey')
+            ax.plot(avgf, 'b-')
+            ax.plot(np.zeros_like(avgf), 'r-')
+            ax.plot(self.moving_average(avgf, n=5), color='orange')
+
+    def get_slippage_rates(self, flow_per_t, pos_membranes, delta_t=5):
+        '''
+        Computes slippage rates.
+        flow_per_t      -  flow along that leg (list of projected flows per column (time))
+        pos_membranes   -  position of membrane per kymo column (time)
+        delta_t         -  distance between columns in kymos used to compute slippage
+        '''
+        slippage = np.zeros(len(pos_membranes)-delta_t)
+        
+        for t in range(len(pos_membranes)-delta_t): # for each column that allows us to jump delta_t forward
+            t2 = t + delta_t
+            delta_membrane = pos_membranes[t2] - pos_membranes[t]
+            delta_flow = np.sum(flow_per_t[t:t2+1])
+            slippage[t]=delta_flow-delta_membrane
+        return slippage
+            
+
+    def plot_slippage(self, fig, delta_t=5, offset_from_membrane=0, length=None, move_window=False, smoothing_width=15):
+        '''
+        Plots the several statistics computed per column of the computed kymographs.
+        fig                   -  the figure object to plot into
+        delta_t               -  distance between columns in kymos used to compute slippage
+        offset_from_membrane  -  stats to be computed in a stripe below membrane starting that many pixels below
+        length                -  pixel height of stripe within which stats are computed (if None, stripe reaches until bottom)
+        move_window           -  if true, the window we use to read flows is pushed around by the flow (static pos. otherwise)
+        smoothing_width       -  width of sliding average window size
+        '''
+        fig.suptitle('Slippage', fontsize=16)
+        
+        slippages = []
+        smoothed_slippages = []
+        for legnum in range(self.num_legs):
+            if legnum == 0:
+                style = 'y-'
+                style_reset = 'C*'
+            else:
+                style = 'c-'
+                style_reset = 'y*'
+
+            # read the segmented membrane location out of kymo_seg
+            pos_membranes = np.zeros( len(self.kymographs[0][0]) )
+            for col in range( len(self.kymographs[0][0]) ):
+                pos_membranes[col] = np.argmax(self.kymo_seg[legnum][:,col])
+            
+            # get the average inward flow below the membrane
+            #print np.shape(pos_membranes), pos_membranes
+            minf, avgf, maxf, stdf, pos_intervals, resets = \
+                        self.get_flow_stats(self.kymo_flows[legnum], pos_membranes+offset_from_membrane,length, move_window)
+            
+            # make kymo_seg transparent (in order to be able to plot on top of another kymo)
+            kymo_seg_transp = np.ma.masked_where(self.kymo_seg[legnum] < .9, self.kymo_seg[legnum])
+            
+            # Finally we can compute the slippage!!!
+            slippage_ys = self.get_slippage_rates(avgf, pos_membranes)
+            slippage_xs = np.array(range(len(slippage_ys)))+int(delta_t/2)
+
+            # - - - start the plotting - - - -
+                                     
+            ax = fig.add_subplot(2,self.num_legs,legnum+1)
+            ax.imshow(self.kymo_myosin[legnum], plt.get_cmap('gray'))
+            ax.imshow(kymo_seg_transp, plt.get_cmap('Reds'), vmin=0, vmax=255, alpha=.9)
+            ax.plot(pos_intervals, style)
+            if length is None:
+                ax.plot(np.zeros_like(pos_membranes)+len(self.kymographs[0]), style)
+            else:
+                ax.plot(pos_intervals+length, style)
+            if (len(resets)>0):
+                ax.plot(zip(*resets)[0], zip(*resets)[1], style_reset, markersize=16)
+
+            ax = fig.add_subplot(2,self.num_legs,self.num_legs+legnum+1)
+            ax.set_ylim([-25,25])
+            ax.plot(np.zeros_like(avgf), color='gray')
+            ax.plot(slippage_xs, slippage_ys, color='blue')
+            # flupp
+            running_average_ys = self.moving_average(slippage_ys, n=smoothing_width)
+            running_average_xs = np.array(range(len(running_average_ys))) + int((delta_t+smoothing_width)/2)
+            ax.plot(running_average_xs, running_average_ys, color='red')
+            
+            # store plotted values for later use
+            slippages.append( (slippage_xs, slippage_ys) )
+            smoothed_slippages.append( (running_average_xs, running_average_ys) )
+        return (slippages, smoothed_slippages)
+
