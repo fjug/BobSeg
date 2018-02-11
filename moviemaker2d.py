@@ -217,10 +217,11 @@ class MovieMaker2d:
             if show_centers:
                 for oid in range(len(data3d.object_names)):
                     color = int(128 + 128. / len(data3d.object_names) * (oid + 1))
-                    for f2 in range(f + 1):
-                        center = tuple(data3d.object_seedpoints[oid][f2])
-                        cv2.circle(vis, center, 3, (0, color, 0), 1)
-                        centers.append(center)
+                    for c in centers:
+                        cv2.circle(vis, c, 3, (0, color, 0), 1)
+                    new_center = tuple(data3d.object_seedpoints[oid][f])
+                    cv2.circle(vis, new_center, 3, (33, color, 33), 1)
+                    centers.append(new_center)
 
                     # show best fitting circle
                     r = 0.
@@ -232,7 +233,7 @@ class MovieMaker2d:
                     r += data3d.object_min_surf_dist[oid][f][0]
                     radii.append(r)
 
-                    cv2.circle(vis, tuple(data3d.object_seedpoints[oid][f2]), int(r), (0, color, 0), 1)
+                    cv2.circle(vis, tuple(data3d.object_seedpoints[oid][f]), int(r), (0, color, 0), 1)
 
             # retrieve polygones
             polygones = []
