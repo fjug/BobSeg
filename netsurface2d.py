@@ -139,11 +139,12 @@ class NetSurf2d:
             for k in range(self.K):
                 for j in [(i-1)%self.num_columns, (i+1)%self.num_columns]:
                     k2 = max(0,k-self.max_delta_k)
-                    self.g.add_edge(i*self.K+k, j*self.K+k2, self.INF, 0)
                     if alpha != None:
                         # add constant cost penalty \alpha
-                        self.g.add_edge(i*self.K+k, j*self.K+k, alpha, 0)
-                        
+                        self.g.add_edge(i*self.K+k, j*self.K+k2, alpha, 0)
+                    else:
+                        self.g.add_edge(i * self.K + k, j * self.K + k2, self.INF, 0)
+
     def get_counts( self ):
         size_s_comp = 0
         size_t_comp = 0
