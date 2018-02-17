@@ -199,6 +199,12 @@ class NetSurf2d:
             if self.g.get_segment(column_id*self.K+k) == 1: break # leave as soon as k is first outside point
         k-=1
         return k
+    
+    def get_surface_index( self, column_id ):
+        for k in range(self.K):
+            if self.g.get_segment(column_id*self.K+k) == 1: break # leave as soon as k is first outside point
+        k-=1
+        return k
 
     def get_inside_points( self, column_id ):
         points = []
