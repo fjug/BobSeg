@@ -314,7 +314,10 @@ class Data3d:
         k_over_time = np.zeros( (self.num_columns, len(self.images)) )
         for f in range( len(self.images) ):
             for i in range( self.num_columns ):
-                k_over_time[i,f] = self.netsurf2dt[oid].get_surface_index(f,i)
+                if self.netsurf2dt[oid] is None:
+                    k_over_time[i,f] = self.netsurfs[oid][f].get_surface_index(i)
+                else:
+                    k_over_time[i,f] = self.netsurf2dt[oid].get_surface_index(f,i)
         return k_over_time
     
     def get_dist_to_center( self, oid, frame ):
