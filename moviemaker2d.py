@@ -226,7 +226,10 @@ class MovieMaker2d:
                     # show best fitting circle
                     r = 0.
                     for i in range(data3d.num_columns):
-                        r += data3d.netsurf2dt[oid].get_surface_index(f, i)
+                        if (data3d.netsurf2dt[oid] is None):
+                            r += data3d.netsurfs[oid][f].get_surface_index(i)
+                        else:
+                            r += data3d.netsurf2dt[oid].get_surface_index(f, i)
                     r /= data3d.num_columns
                     r /= data3d.K
                     r *= data3d.object_max_surf_dist[oid][f][0] - data3d.object_min_surf_dist[oid][f][0]
@@ -238,7 +241,7 @@ class MovieMaker2d:
             # retrieve polygones
             polygones = []
             for oid in range(len(data3d.object_names)):
-                if data3d.netsurf2dt is None or dont_use_2dt:
+                if data3d.netsurf2dt[oid] is None or dont_use_2dt:
                     polygones.append(data3d.get_result_polygone(oid, f))
                 else:
                     polygones.append(data3d.get_result_polygone_2dt(oid, f))
