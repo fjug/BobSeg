@@ -206,12 +206,12 @@ class MovieMaker2d:
             pylab.rcParams['figure.figsize'] = (25, 10)
             fig = plt.figure()
 
-        for f in range(len(im)):
+        for f, frame in enumerate(im):
             # create image for a single frame and draw
-            vis = cv2.cvtColor(np.zeros_like(im[f]), cv2.COLOR_GRAY2BGR)
-            vis[:, :, 0] = 255.0 * im[f] / np.max(im[f])
-            vis[:, :, 1] = 255.0 * im[f] / np.max(im[f])
-            vis[:, :, 2] = 255.0 * im[f] / np.max(im[f])
+            vis = cv2.cvtColor(np.zeros_like(frame, dtype=np.uint8), cv2.COLOR_GRAY2BGR)
+            vis[:, :, 0] = 255.0 * frame / np.max(frame)
+            vis[:, :, 1] = 255.0 * frame / np.max(frame)
+            vis[:, :, 2] = 255.0 * frame / np.max(frame)
 
             # show center dot
             if show_centers:
